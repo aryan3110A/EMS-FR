@@ -89,3 +89,34 @@ export const CONTRACT_STATUSES = [
   { value: 'AWAITING_SIGNED', label: 'Awaiting Signed Contract' },
   { value: 'SIGNED_RECEIVED', label: 'Signed Contract Received' },
 ];
+
+export function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h4 className="mb-4 border-b border-slate-100 pb-2 text-xs font-bold uppercase tracking-wider text-blue-700">
+        {title}
+      </h4>
+      <dl className="grid gap-4 sm:grid-cols-2">{children}</dl>
+    </section>
+  );
+}
+
+export function ReviewField({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value?: string | number | null;
+  className?: string;
+}) {
+  const display = value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : '—';
+  return (
+    <div className={className}>
+      <dt className="ems-label mb-1.5">{label}</dt>
+      <dd className="min-h-[2.5rem] rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium leading-relaxed text-slate-800 break-words">
+        {display}
+      </dd>
+    </div>
+  );
+}

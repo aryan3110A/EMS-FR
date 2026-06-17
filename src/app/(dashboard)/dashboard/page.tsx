@@ -3,16 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/sidebar';
-import { api, DashboardStats } from '@/lib/api';
+import { DashboardSkeleton } from '@/components/ui/page-loader';
+import { api } from '@/lib/api';
+import { useCachedQuery } from '@/lib/use-cached-query';
 import { formatDate, statusBadge, statusLabel } from '@/lib/utils';
 import { FileText, Clock, CheckCircle, Factory } from 'lucide-react';
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-
-  useEffect(() => {
-    api.dashboard().then(setStats).catch(console.error);
-  }, []);
+  const { data: stats, loading } = useCachedQuery('dashboard', () => api.dashboard());
 
   const cards = [
     { label: 'Total Contracts', value: stats?.total ?? 0, icon: FileText, color: 'text-blue-600 bg-blue-50' },
@@ -20,6 +18,14 @@ export default function DashboardPage() {
     { label: 'Confirmed for Production', value: stats?.confirmed ?? 0, icon: Factory, color: 'text-purple-600 bg-purple-50' },
     { label: 'Ready for Dispatch', value: stats?.ready ?? 0, icon: CheckCircle, color: 'text-green-600 bg-green-50' },
   ];
+
+  if (loading && !stats) {
+    return (
+      <AppShell title="Dashboard">
+        <DashboardSkeleton />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell title="Dashboard">
@@ -83,10 +89,6 @@ export default function DashboardPage() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
-        <strong>Note:</strong> Salespersons (Jyoti, Brahma Sir) do not use this system. When they call with order details, select their name in the &quot;Contract Received From&quot; field when creating a contract.
       </div>
     </AppShell>
   );

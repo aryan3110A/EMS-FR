@@ -3,9 +3,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout/sidebar';
-import { Field, ReadOnly, StepPills, ON_BEHALF_OPTIONS, CONTRACT_STATUSES } from '@/components/contracts/form-fields';
+import { Field, ReadOnly, StepPills, ON_BEHALF_OPTIONS, CONTRACT_STATUSES, ReviewSection, ReviewField } from '@/components/contracts/form-fields';
 import { EmsSelect } from '@/components/ui/ems-select';
 import { api, ContractForm, Salesperson, Buyer, Product, PackagingType, Port, Office } from '@/lib/api';
+import { invalidateQueryCache } from '@/lib/use-cached-query';
 import { ChevronLeft, ChevronRight, Save } from 'lucide-react';
 
 const STEPS = [
@@ -120,6 +121,7 @@ export default function NewContractPage() {
       ...m,
       buyers: m.buyers.map((b) => (b.id === updated.id ? updated : b)),
     }));
+    invalidateQueryCache('masters:buyers');
   }
 
   async function goToStep(nextStep: number) {
@@ -165,13 +167,16 @@ export default function NewContractPage() {
       if (form.buyerId) {
         await syncBuyerToMaster();
       }
+      const { buyerAddress, buyerContactPerson, buyerEmail, buyerPhone, ...contractData } = form;
       const payload: ContractForm = {
-        ...form,
+        ...contractData,
         status: finalStatus,
         cifPrice: form.cifManualOverride ? form.cifPrice : (autoCif ? parseFloat(autoCif) : form.cifPrice),
         originalContractPrice: form.originalContractPrice ?? form.fobPrice,
       };
       const created = await api.createContract(payload);
+      invalidateQueryCache('dashboard');
+      invalidateQueryCache('contracts');
       router.push(`/contracts/${created.id}`);
     } catch (e) {
       alert('Failed to save contract');
@@ -568,47 +573,80 @@ export default function NewContractPage() {
 
         {/* Review */}
         {step === 6 && (
-          <div className="space-y-4">
-            <h3 className="text-lg font-bold text-slate-800">Review before save</h3>
-            {[
-              ['Section A — Basic', [
-                ['Salesperson', masters.salespersons.find((s) => s.id === form.salespersonId)?.name],
-                ['On Behalf Of', form.contractOnBehalfOf],
-                ['Contract No.', form.contractNumber || 'Auto-generated'],
-                ['Status', form.status],
-              ]],
-              ['Section B — Buyer', [
-                ['Buyer', selectedBuyer?.name],
-                ['Country', selectedBuyer?.country?.name],
-                ['EU / Non-EU', form.euClassification || selectedBuyer?.country?.euClassification],
-                ['Address', form.buyerAddress],
-                ['Email', form.buyerEmail],
-                ['Phone', form.buyerPhone],
-              ]],
-              ['Section C — Product', [
-                ['Product', selectedProduct ? `${selectedProduct.code} — ${selectedProduct.name}` : '—'],
-                ['Processing', form.processingType],
-                ['Quantity', `${form.totalMt} ${form.quantityUnit}`],
-              ]],
-              ['Section D — Commercial', [
-                ['FOB / Freight / CIF', `${form.fobPrice ?? '—'} / ${form.freight ?? 0} / ${form.cifManualOverride ? form.cifPrice : autoCif}`],
-                ['FOB INR/Kg', fobInrPerKg],
-                ['Original Price', form.originalContractPrice ?? form.fobPrice],
-                ['Amendment Price', form.amendmentPrice],
-              ]],
-            ].map(([title, rows]) => (
-              <div key={title as string} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                <h4 className="mb-2 text-sm font-bold text-blue-800">{title as string}</h4>
-                <dl className="grid gap-1 sm:grid-cols-2">
-                  {(rows as [string, unknown][]).map(([k, v]) => (
-                    <div key={k} className="flex justify-between text-sm">
-                      <dt className="text-slate-500">{k}</dt>
-                      <dd className="font-medium">{String(v ?? '—')}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            ))}
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">Review before save</h3>
+              <p className="mt-1 text-sm text-slate-500">Check all details below before submitting the contract.</p>
+            </div>
+
+            <ReviewSection title="Section A — Basic">
+              <ReviewField label="Salesperson" value={masters.salespersons.find((s) => s.id === form.salespersonId)?.name} />
+              <ReviewField label="On Behalf Of" value={form.contractOnBehalfOf} />
+              <ReviewField label="Contract No." value={form.contractNumber || 'Auto-generated'} />
+              <ReviewField label="Status" value={CONTRACT_STATUSES.find((s) => s.value === form.status)?.label ?? form.status} />
+              <ReviewField label="Contract Date" value={form.contractDate} />
+              <ReviewField label="Date / When We Got By" value={form.receivedDate} />
+            </ReviewSection>
+
+            <ReviewSection title="Section B — Buyer">
+              <ReviewField label="Buyer" value={selectedBuyer?.name} />
+              <ReviewField label="Buyer Code" value={selectedBuyer?.code} />
+              <ReviewField label="Country" value={selectedBuyer?.country?.name} />
+              <ReviewField label="EU / Non-EU" value={form.euClassification || selectedBuyer?.country?.euClassification} />
+              <ReviewField label="Contact Person" value={form.buyerContactPerson} />
+              <ReviewField label="Buyer Lot No." value={form.buyerLotNo} />
+              <ReviewField label="Address" value={form.buyerAddress} className="sm:col-span-2" />
+              <ReviewField label="Email" value={form.buyerEmail} />
+              <ReviewField label="Phone" value={form.buyerPhone} />
+            </ReviewSection>
+
+            <ReviewSection title="Section C — Product">
+              <ReviewField label="Product" value={selectedProduct ? `${selectedProduct.code} — ${selectedProduct.name}` : undefined} />
+              <ReviewField label="Processing" value={form.processingType} />
+              <ReviewField label="Quantity" value={`${form.totalMt} ${form.quantityUnit || 'MT'}`} />
+              <ReviewField label="Specification" value={form.specification} className="sm:col-span-2" />
+            </ReviewSection>
+
+            <ReviewSection title="Section D — Commercial">
+              <ReviewField label="Incoterm" value={form.incoterm} />
+              <ReviewField label="FOB Price" value={form.fobPrice != null ? `${form.fobPrice} ${form.fobCurrency || 'USD'}` : undefined} />
+              <ReviewField label="Freight" value={form.freight} />
+              <ReviewField label="Insurance" value={form.insurance} />
+              <ReviewField label="CIF Price" value={form.cifManualOverride ? form.cifPrice : autoCif} />
+              <ReviewField label="FOB INR / Kg" value={fobInrPerKg} />
+              <ReviewField label="Exchange Rate" value={form.exchangeRate} />
+              <ReviewField label="Original Price" value={form.originalContractPrice ?? form.fobPrice} />
+              <ReviewField label="Amendment Price" value={form.amendmentPrice} />
+            </ReviewSection>
+
+            <ReviewSection title="Qty, Shipment & Payment">
+              <ReviewField label="Total Quantity" value={`${form.totalMt} ${form.quantityUnit || 'MT'}`} />
+              <ReviewField label="No. of FCL" value={containers} />
+              <ReviewField
+                label="Destination Port"
+                value={masters.ports.find((p) => p.id === form.destinationPortId)?.name}
+              />
+              <ReviewField label="Expected Shipment" value={form.expectedShipmentDate} />
+              <ReviewField label="Container No." value={form.containerNo} />
+              <ReviewField
+                label="Packing"
+                value={form.packingDescription || masters.packaging.flatMap((p) => p.sizes || []).find((s) => s.id === form.packagingSizeId)?.label}
+              />
+              <ReviewField
+                label="Payment Term"
+                value={
+                  form.paymentType === 'ADVANCE'
+                    ? `Advance ${form.advancePercentage ?? 10}%`
+                    : form.paymentType === 'CAD'
+                      ? 'CAD'
+                      : form.paymentType === 'DIRECT'
+                        ? 'Direct'
+                        : form.paymentType === 'OTHERS'
+                          ? 'Others'
+                          : form.paymentType
+                }
+              />
+            </ReviewSection>
           </div>
         )}
 

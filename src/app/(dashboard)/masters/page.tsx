@@ -1,19 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/layout/sidebar';
-import { api, Salesperson, Buyer, Product } from '@/lib/api';
+import { api } from '@/lib/api';
+import { useCachedQuery } from '@/lib/use-cached-query';
 
 export default function MastersPage() {
-  const [salespersons, setSalespersons] = useState<Salesperson[]>([]);
-  const [buyers, setBuyers] = useState<Buyer[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-
-  useEffect(() => {
-    api.masters.salespersons().then(setSalespersons);
-    api.masters.buyers().then(setBuyers);
-    api.masters.products().then(setProducts);
-  }, []);
+  const { data: salespersons } = useCachedQuery('masters:salespersons', () => api.masters.salespersons());
+  const { data: buyers } = useCachedQuery('masters:buyers', () => api.masters.buyers());
+  const { data: products } = useCachedQuery('masters:products', () => api.masters.products());
 
   return (
     <AppShell title="Master Data">
@@ -21,7 +15,7 @@ export default function MastersPage() {
         <div className="ems-card p-5">
           <h3 className="mb-3 font-semibold">Salespersons (phone orders only)</h3>
           <ul className="space-y-2 text-sm">
-            {salespersons.map((s) => (
+            {(salespersons ?? []).map((s) => (
               <li key={s.id} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
                 <span>{s.name}</span>
                 <span className="text-slate-400">{s.code}</span>
@@ -32,7 +26,7 @@ export default function MastersPage() {
         <div className="ems-card p-5">
           <h3 className="mb-3 font-semibold">Buyers</h3>
           <ul className="space-y-2 text-sm max-h-80 overflow-y-auto">
-            {buyers.map((b) => (
+            {(buyers ?? []).map((b) => (
               <li key={b.id} className="rounded-lg bg-slate-50 px-3 py-2">{b.name}</li>
             ))}
           </ul>
@@ -40,7 +34,7 @@ export default function MastersPage() {
         <div className="ems-card p-5">
           <h3 className="mb-3 font-semibold">Products</h3>
           <ul className="space-y-2 text-sm">
-            {products.map((p) => (
+            {(products ?? []).map((p) => (
               <li key={p.id} className="rounded-lg bg-slate-50 px-3 py-2">
                 <span className="font-medium">{p.code}</span> — {p.name}
               </li>

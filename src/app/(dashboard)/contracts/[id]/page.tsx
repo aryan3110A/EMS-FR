@@ -1,25 +1,33 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/sidebar';
-import { api, Contract } from '@/lib/api';
+import { ContractDetailSkeleton } from '@/components/ui/page-loader';
+import { api } from '@/lib/api';
+import { useCachedQuery } from '@/lib/use-cached-query';
 import { formatDate, formatNumber, statusBadge, statusLabel } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
 
 export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [contract, setContract] = useState<Contract | null>(null);
+  const { data: contract, loading } = useCachedQuery(
+    id ? `contract:${id}` : 'contract:unknown',
+    () => api.contract(id!),
+  );
 
-  useEffect(() => {
-    if (id) api.contract(id).then(setContract).catch(console.error);
-  }, [id]);
+  if (loading && !contract) {
+    return (
+      <AppShell title="Contract Detail">
+        <ContractDetailSkeleton />
+      </AppShell>
+    );
+  }
 
   if (!contract) {
     return (
       <AppShell title="Contract Detail">
-        <p className="text-slate-400">Loading...</p>
+        <p className="text-center text-sm text-slate-500">Contract not found.</p>
       </AppShell>
     );
   }

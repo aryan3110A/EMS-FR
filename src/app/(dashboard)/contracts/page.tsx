@@ -1,39 +1,37 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/sidebar';
-import { api, Contract } from '@/lib/api';
+import { TableRowsSkeleton } from '@/components/ui/page-loader';
+import { api } from '@/lib/api';
+import { useCachedQuery } from '@/lib/use-cached-query';
 import { formatDate, formatNumber, statusBadge, statusLabel } from '@/lib/utils';
 import { Plus, Search } from 'lucide-react';
 
 export default function ContractsPage() {
-  const [contracts, setContracts] = useState<Contract[]>([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
+  const cacheKey = search ? `contracts:search:${search}` : 'contracts:all';
 
-  useEffect(() => {
-    api.contracts(search ? { search } : undefined)
-      .then(setContracts)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [search]);
+  const { data: contracts, loading } = useCachedQuery(
+    cacheKey,
+    () => api.contracts(search ? { search } : undefined),
+  );
+
+  const list = contracts ?? [];
 
   return (
     <AppShell title="Contract Register">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">
-          Matches your paper register: Date, Salesperson, Contract No., Buyer, Product, FOB, Freight, CIF
-        </p>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
         <Link href="/contracts/new" className="ems-btn-primary gap-2">
           <Plus className="h-4 w-4" /> New Contract
         </Link>
       </div>
 
-      <div className="mb-4 relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <div className="relative mb-4 max-w-md">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
-          className="ems-input pl-9"
+          className="ems-search-input"
           placeholder="Search contract, buyer, invoice..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -65,12 +63,12 @@ export default function ContractsPage() {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
-              <tr><td colSpan={18} className="py-10 text-center text-slate-400">Loading...</td></tr>
-            ) : contracts.length === 0 ? (
+            {loading && !contracts ? (
+              <TableRowsSkeleton rows={8} cols={18} />
+            ) : list.length === 0 ? (
               <tr><td colSpan={18} className="py-10 text-center text-slate-400">No contracts found</td></tr>
             ) : (
-              contracts.map((c) => (
+              list.map((c) => (
                 <tr key={c.id}>
                   <td>{formatDate(c.receivedDate)}</td>
                   <td className="font-medium text-blue-800">{c.salesperson?.name ?? '—'}</td>
