@@ -256,7 +256,7 @@ export interface ContractContainer {
   shipmentYear?: number;
   shipmentHalf?: string;
   product?: Product;
-  productVariant?: { id: string; name: string };
+  productVariant?: { id?: string; name: string };
   destinationPort?: Port;
 }
 
