@@ -15,6 +15,8 @@ type EmsSelectProps = {
   searchable?: boolean;
   disabled?: boolean;
   className?: string;
+  addOptionValue?: string;
+  onAddSelect?: () => void;
 };
 
 type DropdownPos = { top: number; left: number; width: number; maxHeight: number; openUp: boolean };
@@ -27,6 +29,8 @@ export function EmsSelect({
   searchable = false,
   disabled = false,
   className,
+  addOptionValue,
+  onAddSelect,
 }: EmsSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -90,6 +94,12 @@ export function EmsSelect({
   }, []);
 
   function selectOption(optValue: string) {
+    if (addOptionValue && optValue === addOptionValue && onAddSelect) {
+      onAddSelect();
+      setOpen(false);
+      setSearch('');
+      return;
+    }
     onChange(optValue);
     setOpen(false);
     setSearch('');
@@ -138,18 +148,20 @@ export function EmsSelect({
               {filtered.map((opt) => {
                 const isSelected = value === opt.value;
                 const isPlaceholder = !opt.value;
+                const isAddOption = addOptionValue && opt.value === addOptionValue;
                 return (
-                  <li key={opt.value || `opt-${opt.label}`}>
+                  <li key={opt.value || `opt-${opt.label}`} className={isAddOption ? 'border-t border-slate-100 mt-1 pt-1' : undefined}>
                     <button
                       type="button"
                       onClick={() => selectOption(opt.value)}
                       className={cn(
                         'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors',
-                        isSelected && !isPlaceholder
+                        isAddOption && 'font-medium text-blue-700 hover:bg-blue-50',
+                        isSelected && !isPlaceholder && !isAddOption
                           ? 'bg-blue-600 font-medium text-white shadow-sm'
                           : isSelected && isPlaceholder
                             ? 'bg-slate-100 font-normal text-slate-500'
-                            : 'text-slate-700 hover:bg-blue-50 hover:text-blue-800',
+                            : !isAddOption && 'text-slate-700 hover:bg-blue-50 hover:text-blue-800',
                       )}
                     >
                       <span className="truncate">{opt.label}</span>

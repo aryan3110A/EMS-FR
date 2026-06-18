@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Globe2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { showError } from '@/lib/toast';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,7 +23,9 @@ export default function LoginPage() {
       localStorage.setItem('ems_user', JSON.stringify(res.user));
       router.push('/dashboard');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Login failed');
+      const message = err instanceof ApiError ? err.message : 'Login failed';
+      setError(message);
+      showError(err, 'Login failed');
     } finally {
       setLoading(false);
     }

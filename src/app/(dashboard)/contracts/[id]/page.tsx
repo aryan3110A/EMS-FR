@@ -1,16 +1,35 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useEffect, useRef } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/sidebar';
 import { ContractDetailSkeleton } from '@/components/ui/page-loader';
 import { api } from '@/lib/api';
 import { useCachedQuery } from '@/lib/use-cached-query';
+import { showSuccess } from '@/lib/toast';
 import { formatDate, formatNumber, statusBadge, statusLabel } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
 
 export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const successToastShown = useRef(false);
+
+  useEffect(() => {
+    if (successToastShown.current) return;
+    if (searchParams.get('created') === '1') {
+      successToastShown.current = true;
+      showSuccess('Contract created successfully');
+      router.replace(`/contracts/${id}`);
+    } else if (searchParams.get('draft') === '1') {
+      successToastShown.current = true;
+      showSuccess('Contract saved as draft successfully');
+      router.replace(`/contracts/${id}`);
+    }
+  }, [id, router, searchParams]);
+
   const { data: contract, loading } = useCachedQuery(
     id ? `contract:${id}` : 'contract:unknown',
     () => api.contract(id!),
@@ -55,7 +74,6 @@ export default function ContractDetailPage() {
               ['Contract Sent Date', formatDate(contract.contractSentDate)],
               ['Received Date', formatDate(contract.receivedDate)],
               ['Salesperson', contract.salesperson?.name],
-              ['On Behalf Of', contract.contractOnBehalfOf],
               ['Contract Date', formatDate(contract.contractDate)],
               ['Signed Received', formatDate(contract.signedContractReceivedDate)],
               ['Invoice No.', contract.invoiceNumber ?? 'Pending'],
@@ -69,7 +87,6 @@ export default function ContractDetailPage() {
               ['Buyer Code', contract.buyer?.code],
               ['Country', contract.buyer?.country?.name],
               ['EU / Non-EU', contract.euClassification ?? contract.buyer?.euClassification],
-              ['Buyer Lot No.', contract.buyerLotNo ?? '—'],
             ],
           },
           {
@@ -80,15 +97,14 @@ export default function ContractDetailPage() {
               ['Processing', contract.processingType],
               ['Quantity', `${contract.totalMt} ${contract.quantityUnit || 'MT'}`],
               ['Specification', contract.specification],
-              ['Quality Req.', contract.qualityRequirement],
             ],
           },
           {
             title: 'Section D — Commercial Information',
             rows: [
               ['FOB Price', formatNumber(contract.fobPrice, 0)],
-              ['FOB Currency / Unit', `${contract.fobCurrency} / ${contract.fobPriceUnit}`],
-              ['Freight / Unit', `${formatNumber(contract.freight, 0)} (${contract.freightUnit || '—'})`],
+              ['FOB Currency', contract.fobCurrency ?? '—'],
+              ['Freight', formatNumber(contract.freight, 0)],
               ['Insurance', formatNumber(contract.insurance, 0)],
               ['CIF Price', formatNumber(contract.cifPrice, 0)],
               ['Exchange Rate', formatNumber(contract.exchangeRate, 2)],
@@ -101,7 +117,7 @@ export default function ContractDetailPage() {
             title: 'Shipment & Dispatch',
             rows: [
               ['Total MT', contract.totalMt],
-              ['FCL', contract.numberOfContainers],
+              ['Containers', contract.numberOfContainers],
               ['Order MT / Filled MT', `${contract.totalMt} / —`],
               ['Port', contract.destinationPort?.name],
               ['Shipment Period', contract.shipmentMonth],
