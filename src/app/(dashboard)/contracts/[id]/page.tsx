@@ -1,21 +1,34 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/sidebar';
 import { ContractDetailSkeleton } from '@/components/ui/page-loader';
-import { api } from '@/lib/api';
-import { useCachedQuery } from '@/lib/use-cached-query';
+import { AmendmentModal } from '@/components/contracts/amendment-modal';
+import { AmendmentHistory } from '@/components/contracts/amendment-history';
+import { AuditLogPanel } from '@/components/contracts/audit-log-panel';
+import { api, ContractContainer } from '@/lib/api';
+import { useCachedQuery, invalidateQueryCache } from '@/lib/use-cached-query';
 import { showSuccess } from '@/lib/toast';
+import { BASIC_DATE_LABELS, CONTAINER_FIELD_LABELS } from '@/lib/contract-labels';
+import { commercialFieldVisibility } from '@/lib/commercial-calculations';
 import { formatDate, formatNumber, statusBadge, statusLabel } from '@/lib/utils';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Pencil } from 'lucide-react';
+
+function containerPrice(c: ContractContainer) {
+  const term = (c.incoterm ?? 'FOB').toUpperCase();
+  if (term === 'CIF') return c.currentCifCnfPrice ?? c.cifPrice;
+  if (term === 'CNF') return c.currentCifCnfPrice ?? c.cnfPrice;
+  return c.fobPrice;
+}
 
 export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
   const successToastShown = useRef(false);
+  const [amendTarget, setAmendTarget] = useState<ContractContainer | null>(null);
 
   useEffect(() => {
     if (successToastShown.current) return;
@@ -51,11 +64,56 @@ export default function ContractDetailPage() {
     );
   }
 
+  const containers = contract.containers?.length
+    ? contract.containers
+    : [
+        {
+          id: 'legacy',
+          containerIndex: 1,
+          productId: contract.product?.id || '',
+          product: contract.product,
+          productVariant: contract.productVariant,
+          processingType: contract.processingType,
+          specification: contract.specification,
+          quantityMt: contract.totalMt,
+          destinationPort: contract.destinationPort,
+          incoterm: contract.incoterm,
+          fobPrice: contract.fobPrice,
+          fobCurrency: contract.fobCurrency,
+          exchangeRate: contract.exchangeRate,
+          fobInrPerKg: contract.fobInrPerKg,
+          totalFreight: contract.freight,
+          insurance: contract.insurance,
+          cifPrice: contract.cifPrice,
+        } as ContractContainer,
+      ];
+
+  const canEdit = (() => {
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+    const isAdmin = user.role === 'SUPER_ADMIN' || user.role === 'OFFICE_ADMIN';
+    if (isAdmin) return true;
+    return ['DRAFT', 'UNDER_PREPARATION', 'AWAITING_SIGNED_CONTRACT'].includes(contract.status);
+  })();
+
+  const canAmend = (c: ContractContainer) => {
+    const vis = commercialFieldVisibility((c.incoterm ?? 'FOB') as 'FOB' | 'CIF' | 'CNF');
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+    const roleOk = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(user.role);
+    return vis.changeAmendment && c.containerStatus === 'REACHED_PORT' && roleOk;
+  };
+
   return (
     <AppShell title={`Contract ${contract.contractNumber}`}>
-      <Link href="/contracts" className="mb-4 inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
-        <ArrowLeft className="h-4 w-4" /> Back to register
-      </Link>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Link href="/contracts" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+          <ArrowLeft className="h-4 w-4" /> Back to register
+        </Link>
+        {canEdit && (
+          <Link href={`/contracts/${id}/edit`} className="ems-btn-secondary gap-1 text-sm">
+            <Pencil className="h-4 w-4" /> Edit Contract
+          </Link>
+        )}
+      </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <span className={`rounded-full px-3 py-1 text-sm font-medium ${statusBadge(contract.status)}`}>
@@ -67,85 +125,123 @@ export default function ContractDetailPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {[
-          {
-            title: 'Section A — Basic Contract Information',
-            rows: [
-              ['Contract Sent Date', formatDate(contract.contractSentDate)],
-              ['Received Date', formatDate(contract.receivedDate)],
+        <div className="ems-card p-5">
+          <h3 className="mb-3 font-semibold text-slate-800">Section A — Basic Contract Information</h3>
+          <dl className="space-y-2">
+            {[
+              [BASIC_DATE_LABELS.contractSentDate, formatDate(contract.contractSentDate)],
+              [BASIC_DATE_LABELS.receivedDate, formatDate(contract.receivedDate)],
+              [BASIC_DATE_LABELS.contractDate, formatDate(contract.contractDate)],
+              [BASIC_DATE_LABELS.signedContractReceivedDate, formatDate(contract.signedContractReceivedDate)],
               ['Salesperson', contract.salesperson?.name],
-              ['Contract Date', formatDate(contract.contractDate)],
-              ['Signed Received', formatDate(contract.signedContractReceivedDate)],
               ['Invoice No.', contract.invoiceNumber ?? 'Pending'],
               ['Status', statusLabel(contract.status)],
-            ],
-          },
-          {
-            title: 'Section B — Buyer Information',
-            rows: [
+            ].map(([label, value]) => (
+              <Row key={String(label)} label={String(label)} value={value} />
+            ))}
+          </dl>
+        </div>
+
+        <div className="ems-card p-5">
+          <h3 className="mb-3 font-semibold text-slate-800">Section B — Buyer Information</h3>
+          <dl className="space-y-2">
+            {[
               ['Buyer', contract.buyer?.name],
               ['Buyer Code', contract.buyer?.code],
               ['Country', contract.buyer?.country?.name],
               ['EU / Non-EU', contract.euClassification ?? contract.buyer?.euClassification],
-            ],
-          },
-          {
-            title: 'Section C — Product Information',
-            rows: [
-              ['Product', `${contract.product?.code} — ${contract.product?.name}`],
-              ['Variant', contract.productVariant?.name],
-              ['Processing', contract.processingType],
-              ['Quantity', `${contract.totalMt} ${contract.quantityUnit || 'MT'}`],
-              ['Specification', contract.specification],
-            ],
-          },
-          {
-            title: 'Section D — Commercial Information',
-            rows: [
-              ['FOB Price', formatNumber(contract.fobPrice, 0)],
-              ['FOB Currency', contract.fobCurrency ?? '—'],
-              ['Freight', formatNumber(contract.freight, 0)],
-              ['Insurance', formatNumber(contract.insurance, 0)],
-              ['CIF Price', formatNumber(contract.cifPrice, 0)],
-              ['Exchange Rate', formatNumber(contract.exchangeRate, 2)],
-              ['FOB INR / Kg', formatNumber(contract.fobInrPerKg, 2)],
-              ['Original Price', formatNumber(contract.originalContractPrice, 0)],
-              ['Amendment Price', formatNumber(contract.amendmentPrice, 0)],
-            ],
-          },
-          {
-            title: 'Shipment & Dispatch',
-            rows: [
-              ['Total MT', contract.totalMt],
-              ['Containers', contract.numberOfContainers],
-              ['Order MT / Filled MT', `${contract.totalMt} / —`],
-              ['Port', contract.destinationPort?.name],
-              ['Shipment Period', contract.shipmentMonth],
-              ['Container No.', contract.containerNo ?? 'Pending'],
-              ['Packing', contract.packingDescription ?? contract.packagingSize?.label],
-            ],
-          },
-          {
-            title: 'Payment',
-            rows: [
+            ].map(([label, value]) => (
+              <Row key={String(label)} label={String(label)} value={value} />
+            ))}
+          </dl>
+        </div>
+
+        <div className="ems-card p-5 lg:col-span-2">
+          <h3 className="mb-3 font-semibold text-slate-800">Section C–D — Container-wise Review</h3>
+          <div className="space-y-6">
+            {containers.map((c) => {
+              const vis = commercialFieldVisibility((c.incoterm ?? 'FOB') as 'FOB' | 'CIF' | 'CNF');
+              const period =
+                c.shipmentMonth && c.shipmentYear && c.shipmentHalf
+                  ? `${c.shipmentMonth}-${String(c.shipmentYear).slice(-2)} (${c.shipmentHalf === 'FIRST_HALF' ? '1–15' : '16–end'})`
+                  : c.expectedShipmentDate
+                    ? formatDate(c.expectedShipmentDate)
+                    : '—';
+              return (
+                <div key={c.id} className="rounded-lg border border-slate-200 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="font-semibold text-slate-800">
+                      {CONTAINER_FIELD_LABELS.containerSequence} {c.containerIndex}
+                    </h4>
+                    {canAmend(c) && c.id !== 'legacy' && (
+                      <button
+                        type="button"
+                        className="ems-btn-secondary text-xs"
+                        onClick={() => setAmendTarget(c)}
+                      >
+                        Change CIF / CNF
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <MiniField label="Product" value={`${c.product?.code ?? ''} — ${c.product?.name ?? ''}`} />
+                    <MiniField label="Variant" value={c.productVariant?.name} />
+                    <MiniField label="Processing" value={c.processingType} />
+                    <MiniField label="Specification" value={c.specification} />
+                    <MiniField label={CONTAINER_FIELD_LABELS.allocatedMt} value={formatNumber(c.quantityMt, 3)} />
+                    <MiniField label="Destination Port" value={c.destinationPort?.name} />
+                    <MiniField label={CONTAINER_FIELD_LABELS.expectedShipmentDate} value={formatDate(c.expectedShipmentDate)} />
+                    <MiniField label={CONTAINER_FIELD_LABELS.shipmentPeriod} value={period} />
+                    <MiniField label={CONTAINER_FIELD_LABELS.shippingContainerNo} value={c.containerNo ?? 'Pending'} />
+                    <MiniField label="Incoterm" value={c.incoterm} />
+                    <MiniField label="FOB Price" value={formatNumber(c.fobPrice, 2)} />
+                    <MiniField label="FOB Currency" value={c.fobCurrency} />
+                    <MiniField label="Exchange Rate" value={formatNumber(c.exchangeRate, 4)} />
+                    <MiniField label="FOB INR / Kg" value={formatNumber(c.fobInrPerKg, 2)} />
+                    {vis.totalFreight && (
+                      <MiniField label={CONTAINER_FIELD_LABELS.totalFreight} value={formatNumber(c.totalFreight, 2)} />
+                    )}
+                    {vis.freightPerMt && (
+                      <MiniField label={CONTAINER_FIELD_LABELS.freightPerMt} value={formatNumber(c.freightPerMt, 2)} />
+                    )}
+                    {vis.insurance && <MiniField label="Insurance" value={formatNumber(c.insurance, 2)} />}
+                    {vis.cifPrice && <MiniField label="CIF Price" value={formatNumber(c.cifPrice, 2)} />}
+                    {vis.cnfPrice && <MiniField label="CNF Price" value={formatNumber(c.cnfPrice, 2)} />}
+                    {vis.changeAmendment && (
+                      <MiniField label="Current Price" value={formatNumber(containerPrice(c), 2)} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="ems-card p-5">
+          <h3 className="mb-3 font-semibold text-slate-800">Payment</h3>
+          <dl className="space-y-2">
+            {[
               ['Payment Type', contract.paymentType?.replace(/_/g, ' ')],
               ['Advance %', contract.advancePercentage ? `${contract.advancePercentage}%` : '—'],
               ['Balance Stage', contract.balancePaymentStage ?? '—'],
-            ],
-          },
-        ].map((section) => (
-          <div key={section.title} className="ems-card p-5">
-            <h3 className="mb-3 font-semibold text-slate-800">{section.title}</h3>
-            <dl className="space-y-2">
-              {section.rows.map(([label, value]) => (
-                <div key={label} className="flex justify-between gap-4 text-sm">
-                  <dt className="text-slate-500">{label}</dt>
-                  <dd className="font-medium text-slate-800 text-right">{value ?? '—'}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ))}
+            ].map(([label, value]) => (
+              <Row key={String(label)} label={String(label)} value={value} />
+            ))}
+          </dl>
+        </div>
+
+        <div className="ems-card p-5">
+          <h3 className="mb-3 font-semibold text-slate-800">Summary</h3>
+          <dl className="space-y-2">
+            {[
+              ['Total MT', contract.totalMt],
+              ['Containers', contract.numberOfContainers],
+              ['Packing', contract.packingDescription ?? contract.packagingSize?.label],
+            ].map(([label, value]) => (
+              <Row key={String(label)} label={String(label)} value={value} />
+            ))}
+          </dl>
+        </div>
       </div>
 
       {contract.remarks && (
@@ -154,6 +250,46 @@ export default function ContractDetailPage() {
           <p className="text-sm text-slate-600">{contract.remarks}</p>
         </div>
       )}
+
+      <AmendmentHistory containers={containers} />
+
+      <div className="mt-4 ems-card p-5">
+        <h3 className="mb-3 font-semibold text-slate-800">Audit Log</h3>
+        <AuditLogPanel contractId={contract.id} />
+      </div>
+
+      {amendTarget && amendTarget.id !== 'legacy' && (
+        <AmendmentModal
+          open
+          contractId={contract.id}
+          containerId={amendTarget.id}
+          incoterm={amendTarget.incoterm ?? 'CIF'}
+          currentPrice={containerPrice(amendTarget) ?? 0}
+          onClose={() => setAmendTarget(null)}
+          onAmended={() => {
+            invalidateQueryCache(`contract:${id}`);
+            window.location.reload();
+          }}
+        />
+      )}
     </AppShell>
+  );
+}
+
+function Row({ label, value }: { label: string; value?: string | number | null }) {
+  return (
+    <div className="flex justify-between gap-4 text-sm">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="text-right font-medium text-slate-800">{value ?? '—'}</dd>
+    </div>
+  );
+}
+
+function MiniField({ label, value }: { label: string; value?: string | number | null }) {
+  return (
+    <div>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-sm font-medium text-slate-800">{value ?? '—'}</p>
+    </div>
   );
 }

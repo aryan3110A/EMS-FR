@@ -14,6 +14,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -129,8 +130,13 @@ export function AppShell({ children, title, subtitle }: { children: React.ReactN
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="border-b border-slate-200/80 bg-white px-6 py-4">
-          <h1 className="text-xl font-bold text-slate-800">{title}</h1>
-          {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-xl font-bold text-slate-800">{title}</h1>
+              {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+            </div>
+            <NotificationBell />
+          </div>
         </header>
         <main className="flex-1 overflow-auto p-6">{children}</main>
       </div>

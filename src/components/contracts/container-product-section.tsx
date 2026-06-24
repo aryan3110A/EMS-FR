@@ -4,6 +4,7 @@ import { Field, ReadOnly } from '@/components/contracts/form-fields';
 import { EmsSelect } from '@/components/ui/ems-select';
 import { InlineAddPanel } from '@/components/ui/inline-add-panel';
 import { ADD_OPTION_VALUE } from '@/lib/form-constants';
+import { PRODUCT_SPECIFICATIONS } from '@/lib/commercial-calculations';
 import type { ContainerProduct, Product } from '@/lib/api';
 
 type AddPanel = 'product' | 'variant' | null;
@@ -154,10 +155,14 @@ export function ContainerProductSection({
         </Field>
 
         <Field label="Product Specification" className="sm:col-span-2">
-          <textarea
-            className="ems-input min-h-[72px]"
+          <EmsSelect
             value={data.specification || ''}
-            onChange={(e) => onChange('specification', e.target.value)}
+            onChange={(v) => onChange('specification', v)}
+            placeholder="Select specification"
+            options={[
+              { value: '', label: 'Select specification' },
+              ...PRODUCT_SPECIFICATIONS.map((s) => ({ value: s, label: s })),
+            ]}
           />
         </Field>
 

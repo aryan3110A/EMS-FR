@@ -1,14 +1,12 @@
 'use client';
 
 import { Field, ReadOnly } from '@/components/contracts/form-fields';
+import { FieldError } from '@/components/contracts/field-error';
 import { EmsSelect } from '@/components/ui/ems-select';
 import type { ContainerProduct, Port } from '@/lib/api';
-import {
-  formatShipmentPeriodLabel,
-  getHalfMonthDateRange,
-  SHIPMENT_HALF_OPTIONS,
-  type ShipmentHalf,
-} from '@/lib/shipment-period';
+import { ADD_OPTION_VALUE } from '@/lib/form-constants';
+import { CONTAINER_FIELD_LABELS } from '@/lib/contract-labels';
+import { deriveShipmentFromExpectedDate, shipmentPeriodReadOnly } from '@/lib/shipment-period';
 
 type ContainerShipmentSectionProps = {
   index: number;
@@ -17,6 +15,8 @@ type ContainerShipmentSectionProps = {
   showCopyButton: boolean;
   onCopyFromFirst: () => void;
   onPatch: (patch: Partial<ContainerProduct>) => void;
+  onAddPort?: () => void;
+  errors?: Record<string, string>;
 };
 
 export function ContainerShipmentSection({
@@ -26,16 +26,19 @@ export function ContainerShipmentSection({
   showCopyButton,
   onCopyFromFirst,
   onPatch,
+  onAddPort,
+  errors = {},
 }: ContainerShipmentSectionProps) {
-  const shipmentDateRange =
-    data.shipmentMonthYear && data.shipmentHalf
-      ? getHalfMonthDateRange(data.shipmentMonthYear, data.shipmentHalf)
-      : null;
+  const { month, period } = shipmentPeriodReadOnly(data.expectedShipmentDate);
 
-  const shipmentPeriodLabel =
-    data.shipmentMonthYear && data.shipmentHalf
-      ? formatShipmentPeriodLabel(data.shipmentMonthYear, data.shipmentHalf)
-      : '';
+  function onExpectedDateChange(value: string) {
+    const derived = deriveShipmentFromExpectedDate(value);
+    onPatch({
+      expectedShipmentDate: value,
+      shipmentMonthYear: derived.shipmentMonthYear,
+      shipmentHalf: derived.shipmentHalf,
+    });
+  }
 
   return (
     <div className={index > 0 ? 'mt-8 border-t border-slate-200 pt-8' : 'mt-4'}>
@@ -43,69 +46,69 @@ export function ContainerShipmentSection({
         <h3 className="text-base font-bold text-slate-800">Container {index + 1} — Shipment</h3>
         {showCopyButton && (
           <button type="button" onClick={onCopyFromFirst} className="ems-btn-secondary text-sm">
-            Same as Container 1
+            Copy details from previous container
           </button>
         )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Allocated Quantity / MT">
+          <input
+            type="number"
+            step="0.001"
+            min={0.001}
+            className="ems-input"
+            value={data.quantityMt ?? ''}
+            onChange={(e) => onPatch({ quantityMt: parseFloat(e.target.value) || undefined })}
+          />
+          <FieldError message={errors[`container_${index}_quantityMt`]} />
+        </Field>
+
         <Field label="Destination Port — Country">
           <EmsSelect
             searchable
             value={data.destinationPortId || ''}
-            onChange={(v) => onPatch({ destinationPortId: v })}
+            onChange={(v) => {
+              if (v === ADD_OPTION_VALUE) {
+                onAddPort?.();
+                return;
+              }
+              onPatch({ destinationPortId: v });
+            }}
             placeholder="Select port"
+            addOptionValue={onAddPort ? ADD_OPTION_VALUE : undefined}
+            onAddSelect={onAddPort}
             options={[
               { value: '', label: 'Select port' },
-              ...ports.filter((p) => p.portType !== 'LOADING').map((p) => ({ value: p.id, label: p.name })),
+              ...ports.filter((p) => p.portType !== 'LOADING' && p.isActive !== false).map((p) => ({ value: p.id, label: p.name })),
+              ...(onAddPort ? [{ value: ADD_OPTION_VALUE, label: '+ Add new port' }] : []),
             ]}
           />
+          <FieldError message={errors[`container_${index}_destinationPortId`]} />
         </Field>
-        <Field label="Shipment Month">
-          <input
-            type="month"
-            className="ems-input"
-            value={data.shipmentMonthYear || ''}
-            onChange={(e) => onPatch({ shipmentMonthYear: e.target.value, expectedShipmentDate: '' })}
-          />
-        </Field>
-        <Field label="Shipment Period">
-          <EmsSelect
-            value={data.shipmentHalf || ''}
-            onChange={(v) => onPatch({ shipmentHalf: v as ShipmentHalf, expectedShipmentDate: '' })}
-            placeholder="Select first or second half"
-            options={[
-              { value: '', label: 'Select half of month' },
-              ...SHIPMENT_HALF_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-            ]}
-          />
-        </Field>
-        {shipmentPeriodLabel && (
-          <Field label="Selected Period">
-            <ReadOnly value={shipmentPeriodLabel} />
-          </Field>
-        )}
-        <Field
-          label="Expected Shipment Date"
-          hint={
-            shipmentDateRange
-              ? `Pick a date between ${shipmentDateRange.min} and ${shipmentDateRange.max}`
-              : 'Select month and half first'
-          }
-        >
+
+        <Field label={CONTAINER_FIELD_LABELS.expectedShipmentDate}>
           <input
             type="date"
             className="ems-input"
-            disabled={!shipmentDateRange}
-            min={shipmentDateRange?.min}
-            max={shipmentDateRange?.max}
             value={data.expectedShipmentDate || ''}
-            onChange={(e) => onPatch({ expectedShipmentDate: e.target.value })}
+            onChange={(e) => onExpectedDateChange(e.target.value)}
           />
+          <FieldError message={errors[`container_${index}_expectedShipmentDate`]} />
         </Field>
-        <Field label="Container No. (later)">
+
+        <Field label={CONTAINER_FIELD_LABELS.shipmentMonth}>
+          <ReadOnly value={month} />
+        </Field>
+
+        <Field label={CONTAINER_FIELD_LABELS.shipmentPeriod}>
+          <ReadOnly value={period} />
+        </Field>
+
+        <Field label={CONTAINER_FIELD_LABELS.shippingContainerNo}>
           <input
             className="ems-input"
+            placeholder="Optional — enter when available"
             value={data.containerNo || ''}
             onChange={(e) => onPatch({ containerNo: e.target.value })}
           />

@@ -51,3 +51,30 @@ export const SHIPMENT_HALF_OPTIONS = [
   { value: 'FIRST_HALF' as ShipmentHalf, label: 'First half of month' },
   { value: 'SECOND_HALF' as ShipmentHalf, label: 'Second half of month' },
 ];
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** PDF §8 — derive read-only shipment month/period from expected date */
+export function deriveShipmentFromExpectedDate(dateStr: string) {
+  const date = new Date(dateStr + 'T12:00:00');
+  if (Number.isNaN(date.getTime())) {
+    return { shipmentMonthYear: '', shipmentHalf: undefined as ShipmentHalf | undefined, shipmentMonthLabel: '' };
+  }
+  const day = date.getDate();
+  const shipmentHalf: ShipmentHalf = day <= 15 ? 'FIRST_HALF' : 'SECOND_HALF';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const shipmentMonthYear = `${year}-${month}`;
+  const shipmentMonthLabel = `${MONTHS[date.getMonth()]}-${String(year).slice(-2)}`;
+  return { shipmentMonthYear, shipmentHalf, shipmentMonthLabel };
+}
+
+export function shipmentPeriodReadOnly(dateStr?: string) {
+  if (!dateStr) return { month: '—', period: '—' };
+  const { shipmentMonthYear, shipmentHalf, shipmentMonthLabel } = deriveShipmentFromExpectedDate(dateStr);
+  const period =
+    shipmentHalf && shipmentMonthYear
+      ? formatShipmentPeriodLabel(shipmentMonthYear, shipmentHalf)
+      : '—';
+  return { month: shipmentMonthLabel || '—', period };
+}

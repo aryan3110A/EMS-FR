@@ -2,7 +2,6 @@ export const ADD_OPTION_VALUE = '__ems_add_new__';
 
 export const BALANCE_PAYMENT_METHODS = [
   { value: 'BANK', label: 'Bank' },
-  { value: 'CARD', label: 'Card' },
   { value: 'DIRECT', label: 'Direct' },
   { value: 'OTHERS', label: 'Others' },
 ];

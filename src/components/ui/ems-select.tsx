@@ -41,11 +41,25 @@ export function EmsSelect({
 
   const selected = options.find((o) => o.value === value);
 
+  const orderedOptions = useMemo(() => {
+    if (!addOptionValue) return options;
+    const addOpt = options.find((o) => o.value === addOptionValue);
+    if (!addOpt) return options;
+    const rest = options.filter((o) => o.value !== addOptionValue);
+    const placeholders = rest.filter((o) => !o.value);
+    const others = rest.filter((o) => o.value);
+    return [addOpt, ...placeholders, ...others];
+  }, [options, addOptionValue]);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return options;
+    const addOpt = addOptionValue ? orderedOptions.find((o) => o.value === addOptionValue) : undefined;
+    const searchableOptions = orderedOptions.filter((o) => o.value !== addOptionValue);
+    if (!search.trim()) return orderedOptions;
     const q = search.toLowerCase();
-    return options.filter((o) => o.label.toLowerCase().includes(q));
-  }, [options, search]);
+    const matches = searchableOptions.filter((o) => o.label.toLowerCase().includes(q));
+    if (addOpt) return [addOpt, ...matches];
+    return matches;
+  }, [orderedOptions, search, addOptionValue]);
 
   const updatePosition = useCallback(() => {
     const el = triggerRef.current;
@@ -150,7 +164,7 @@ export function EmsSelect({
                 const isPlaceholder = !opt.value;
                 const isAddOption = addOptionValue && opt.value === addOptionValue;
                 return (
-                  <li key={opt.value || `opt-${opt.label}`} className={isAddOption ? 'border-t border-slate-100 mt-1 pt-1' : undefined}>
+                  <li key={opt.value || `opt-${opt.label}`} className={isAddOption ? 'border-b border-slate-100 mb-1 pb-1' : undefined}>
                     <button
                       type="button"
                       onClick={() => selectOption(opt.value)}

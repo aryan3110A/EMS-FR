@@ -1,11 +1,22 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout/sidebar';
 import { Field, ReadOnly, StepPills, CONTRACT_STATUSES, ReviewSection, ReviewField } from '@/components/contracts/form-fields';
 import { ContainerProductSection } from '@/components/contracts/container-product-section';
 import { ContainerShipmentSection } from '@/components/contracts/container-shipment-section';
+import { ContainerCommercialSection } from '@/components/contracts/container-commercial-section';
+import { AddBuyerModal } from '@/components/buyers/add-buyer-modal';
+import { AddPortModal } from '@/components/ports/add-port-modal';
+import { BASIC_DATE_LABELS } from '@/lib/contract-labels';
+import { buildContainerProductsPayload } from '@/lib/contract-form-mapper';
+import { distributeContainerMt, validateStep, containerStepComplete } from '@/lib/contract-validation';
+import { enrichContainerCommercial } from '@/lib/commercial-calculations';
+import { ContainerTabs } from '@/components/contracts/container-tabs';
+import { ContainerPackagingSection } from '@/components/contracts/container-packaging-section';
+import { FieldError } from '@/components/contracts/field-error';
+import { AutosaveIndicator, useAutosave } from '@/hooks/use-autosave';
 import { EmsSelect } from '@/components/ui/ems-select';
 import { InlineAddPanel } from '@/components/ui/inline-add-panel';
 import { api, ContractForm, ContainerProduct, Salesperson, Buyer, Product, PackagingType, Port, Office, Country } from '@/lib/api';
@@ -103,6 +114,12 @@ export default function NewContractPage() {
     | null
   >(null);
   const [productAdd, setProductAdd] = useState<{ panel: 'product' | 'variant'; containerIndex: number } | null>(null);
+  const [showBuyerModal, setShowBuyerModal] = useState(false);
+  const [showPortModal, setShowPortModal] = useState(false);
+  const [portModalIndex, setPortModalIndex] = useState(0);
+  const [activeContainerIdx, setActiveContainerIdx] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [draftContractId, setDraftContractId] = useState<string | null>(null);
   const [containerProducts, setContainerProducts] = useState<ContainerProduct[]>([emptyContainerProduct()]);
   const [newBuyerCountryId, setNewBuyerCountryId] = useState('');
   const [newCountryEu, setNewCountryEu] = useState('NON_EU');
@@ -119,7 +136,6 @@ export default function NewContractPage() {
     numberOfContainers: 1,
     fobCurrency: 'USD',
     fobPriceUnit: 'PER_MT',
-    freightUnit: 'PER_CONTAINER',
     incoterm: 'FOB',
     paymentType: 'ADVANCE',
     advancePercentage: 10,
@@ -152,39 +168,43 @@ export default function NewContractPage() {
         : undefined;
       setForm((f) => ({
         ...f,
-        officeId: assignedOffice || amd?.id || '',
+        officeId: f.officeId || assignedOffice || amd?.id || '',
       }));
     });
   }, [user.officeId]);
 
   const selectedBuyer = mergedBuyers.find((b) => b.id === form.buyerId);
-  const fobInrPerKg = useMemo(() => {
-    if (form.fobPrice && form.exchangeRate) {
-      const unit = form.fobPriceUnit || 'PER_MT';
-      if (unit === 'PER_MT') return ((form.fobPrice * form.exchangeRate) / 1000).toFixed(4);
-      if (unit === 'PER_KG') return (form.fobPrice * form.exchangeRate).toFixed(4);
-    }
-    return '';
-  }, [form.fobPrice, form.exchangeRate, form.fobPriceUnit]);
-
-  const autoCif = useMemo(() => {
-    if (form.fobPrice != null) return (form.fobPrice + (form.freight || 0) + (form.insurance || 0)).toFixed(2);
-    return '';
-  }, [form.fobPrice, form.freight, form.insurance]);
-
   const autoContainers = useMemo(() => Math.ceil((form.totalMt || 0) / 28), [form.totalMt]);
   const containers = form.numberOfContainers ?? autoContainers;
 
   useEffect(() => {
     setContainerProducts((prev) => {
       const n = Math.max(1, containers);
-      if (prev.length === n) return prev;
+      const mts = distributeContainerMt(form.totalMt || 0, n);
+      let next = [...prev];
+
       if (prev.length < n) {
-        return [...prev, ...Array.from({ length: n - prev.length }, () => emptyContainerProduct())];
+        const defaultPortId = selectedBuyer?.defaultPort?.id;
+        const added = Array.from({ length: n - prev.length }, () => ({
+          ...emptyContainerProduct(),
+          ...(defaultPortId ? { destinationPortId: defaultPortId } : {}),
+        }));
+        next = [...prev, ...added];
+      } else if (prev.length > n) {
+        next = prev.slice(0, n);
       }
-      return prev.slice(0, n);
+
+      return next.map((c, i) => ({ ...c, quantityMt: mts[i] }));
     });
-  }, [containers]);
+  }, [containers, form.totalMt]);
+
+  useEffect(() => {
+    const defaultPortId = selectedBuyer?.defaultPort?.id;
+    if (!defaultPortId) return;
+    setContainerProducts((prev) =>
+      prev.map((cp, i) => (i === 0 && !cp.destinationPortId ? { ...cp, destinationPortId: defaultPortId } : cp)),
+    );
+  }, [selectedBuyer?.defaultPort?.id]);
 
   function updateContainerProduct(index: number, field: keyof ContainerProduct, value: string) {
     setContainerProducts((prev) => {
@@ -202,25 +222,48 @@ export default function NewContractPage() {
     });
   }
 
-  function copyContainerFromFirst(targetIndex: number) {
+  function copyContainerFromPrevious(targetIndex: number) {
+    if (targetIndex <= 0) return;
     setContainerProducts((prev) => {
+      const source = prev[targetIndex - 1];
+      const keep = prev[targetIndex];
       const next = [...prev];
-      next[targetIndex] = { ...prev[0] };
+      next[targetIndex] = {
+        ...keep,
+        productId: source.productId,
+        productVariantId: source.productVariantId,
+        processingType: source.processingType,
+        specification: source.specification,
+        productRemarks: source.productRemarks,
+        packagingTypeId: source.packagingTypeId,
+        packagingSizeId: source.packagingSizeId,
+        packingDescription: source.packingDescription,
+        packingSizeValue: source.packingSizeValue,
+        packingSizeUnit: source.packingSizeUnit,
+        destinationPortId: source.destinationPortId,
+        incoterm: source.incoterm,
+        fobCurrency: source.fobCurrency,
+        fobPrice: source.fobPrice,
+        exchangeRate: source.exchangeRate,
+        exchangeRateSource: source.exchangeRateSource,
+        exchangeRateAt: source.exchangeRateAt,
+        exchangeRateManual: source.exchangeRateManual,
+        totalFreight: source.totalFreight,
+        insurance: source.insurance,
+        commercialRemarks: source.commercialRemarks,
+      };
       return next;
     });
   }
 
-  function copyContainerShipmentFromFirst(targetIndex: number) {
+  function copyContainerShipmentFromPrevious(targetIndex: number) {
+    if (targetIndex <= 0) return;
     setContainerProducts((prev) => {
+      const source = prev[targetIndex - 1];
       const next = [...prev];
-      const first = prev[0];
       next[targetIndex] = {
         ...next[targetIndex],
-        destinationPortId: first.destinationPortId,
-        shipmentMonthYear: first.shipmentMonthYear,
-        shipmentHalf: first.shipmentHalf,
-        expectedShipmentDate: first.expectedShipmentDate,
-        containerNo: first.containerNo,
+        destinationPortId: source.destinationPortId,
       };
       return next;
     });
@@ -242,8 +285,7 @@ export default function NewContractPage() {
     });
   }
 
-  function onBuyerChange(buyerId: string) {
-    const buyer = mergedBuyers.find((b) => b.id === buyerId);
+  function applyBuyerToForm(buyer: Buyer | undefined, buyerId: string) {
     setForm((f) => ({
       ...f,
       buyerId,
@@ -255,6 +297,36 @@ export default function NewContractPage() {
       buyerEmail: buyer?.email || '',
       buyerPhone: buyer?.phone || '',
     }));
+    if (buyer?.defaultPort?.id) {
+      setContainerProducts((prev) =>
+        prev.map((cp, i) => (i === 0 ? { ...cp, destinationPortId: buyer.defaultPort!.id } : cp)),
+      );
+    }
+  }
+
+  function onBuyerChange(buyerId: string) {
+    if (buyerId === ADD_OPTION_VALUE) {
+      setShowBuyerModal(true);
+      return;
+    }
+    const buyer = mergedBuyers.find((b) => b.id === buyerId);
+    applyBuyerToForm(buyer, buyerId);
+  }
+
+  async function refreshExchangeRate(containerIndex: number) {
+    const c = containerProducts[containerIndex];
+    const currency = c.fobCurrency || 'USD';
+    try {
+      const { rate, source, fetchedAt } = await api.exchangeRate(currency);
+      patchContainerProduct(containerIndex, {
+        exchangeRate: rate,
+        exchangeRateSource: source,
+        exchangeRateAt: fetchedAt,
+        exchangeRateManual: false,
+      });
+    } catch (e) {
+      showError(e, 'Failed to fetch exchange rate');
+    }
   }
 
   function onBuyerCountryChange(countryId: string) {
@@ -286,8 +358,47 @@ export default function NewContractPage() {
   }
 
   function goNext() {
+    const { valid, errors } = validateStep(step, form, containerProducts, form.totalMt);
+    setFieldErrors(errors);
+    if (!valid) {
+      const firstError = Object.values(errors)[0];
+      if (firstError) showError(firstError);
+      return;
+    }
+    setFieldErrors({});
     setStep(step + 1);
   }
+
+  const allocatedSum = useMemo(
+    () => containerProducts.reduce((s, c) => s + (c.quantityMt ?? 0), 0),
+    [containerProducts],
+  );
+
+  const canAutosave = Boolean(form.buyerId && form.officeId && containerProducts[0]?.productId);
+
+  const saveDraftPayload = useCallback(async () => {
+    if (!canAutosave) return;
+    const containerPayload = buildContainerProductsPayload(containerProducts, form.totalMt);
+    const payload = { ...form, status: 'DRAFT', containerProducts: containerPayload, numberOfContainers: containers };
+    try {
+      if (draftContractId) {
+        await api.updateContract(draftContractId, payload);
+      } else {
+        const created = await api.submitContract({ contract: payload, pendingMasters });
+        setDraftContractId(created.id);
+      }
+      invalidateQueryCache('contracts');
+    } catch (e) {
+      showError(e, 'Failed to save draft');
+      throw e;
+    }
+  }, [form, containerProducts, containers, draftContractId, canAutosave, pendingMasters]);
+
+  const { status: autosaveStatus } = useAutosave(
+    { form, containerProducts },
+    saveDraftPayload,
+    { enabled: canAutosave },
+  );
 
   function buildPackingDescription() {
     if (form.packingDescription) return form.packingDescription;
@@ -301,6 +412,18 @@ export default function NewContractPage() {
   }
 
   async function handleSubmit(finalStatus = 'UNDER_PREPARATION') {
+    const requireAll = finalStatus !== 'DRAFT';
+    if (requireAll) {
+      for (let s = 0; s <= 5; s++) {
+        const { valid, errors } = validateStep(s, form, containerProducts, form.totalMt, { requireAll: true });
+        if (!valid) {
+          setFieldErrors(errors);
+          setStep(s);
+          showError('Please complete all required fields before submitting');
+          return;
+        }
+      }
+    }
     setLoading(true);
     try {
       const {
@@ -316,7 +439,7 @@ export default function NewContractPage() {
         ...contractData
       } = form;
       const primary = containerProducts[0];
-      const perContainerMt = form.totalMt / containers;
+      const containerPayload = buildContainerProductsPayload(containerProducts, form.totalMt);
 
       const contractPayload = {
         ...contractData,
@@ -330,29 +453,22 @@ export default function NewContractPage() {
         expectedShipmentDate: primary.expectedShipmentDate,
         shipmentHalf: primary.shipmentHalf,
         containerNo: primary.containerNo,
-        containerProducts: containerProducts.map((c, i) => ({
-          containerIndex: i + 1,
-          productId: c.productId,
-          productVariantId: c.productVariantId || undefined,
-          processingType: c.processingType || undefined,
-          specification: c.specification || undefined,
-          productRemarks: c.productRemarks || undefined,
-          quantityMt: perContainerMt,
-          destinationPortId: c.destinationPortId || undefined,
-          expectedShipmentDate: c.expectedShipmentDate || undefined,
-          shipmentMonth: c.shipmentMonthYear ? formatShipmentMonthDb(c.shipmentMonthYear) : undefined,
-          shipmentYear: c.shipmentMonthYear ? Number(c.shipmentMonthYear.split('-')[0]) : undefined,
-          shipmentHalf: c.shipmentHalf || undefined,
-          containerNo: c.containerNo || undefined,
-        })),
+        incoterm: primary.incoterm ?? contractData.incoterm,
+        fobPrice: primary.fobPrice ?? contractData.fobPrice,
+        fobCurrency: primary.fobCurrency ?? contractData.fobCurrency,
+        exchangeRate: primary.exchangeRate ?? contractData.exchangeRate,
+        freight: primary.totalFreight ?? contractData.freight,
+        insurance: primary.insurance ?? contractData.insurance,
+        containerProducts: containerPayload,
         quantityUnit: 'MT',
         fobPriceUnit: 'PER_MT',
         numberOfContainers: containers,
         shipmentMonth: primary.shipmentMonthYear ? formatShipmentMonthDb(primary.shipmentMonthYear) : undefined,
         shipmentYear: primary.shipmentMonthYear ? Number(primary.shipmentMonthYear.split('-')[0]) : undefined,
-        packingDescription: buildPackingDescription(),
-        cifPrice: form.cifManualOverride ? form.cifPrice : (autoCif ? parseFloat(autoCif) : form.cifPrice),
-        originalContractPrice: form.originalContractPrice ?? form.fobPrice,
+        packingDescription: containerProducts[0]?.packingDescription ?? buildPackingDescription(),
+        cifPrice: primary.cifPrice ?? (form.cifManualOverride ? form.cifPrice : undefined),
+        fobInrPerKg: primary.fobInrPerKg,
+        originalContractPrice: form.originalContractPrice ?? primary.fobPrice ?? form.fobPrice,
       };
 
       const buyerUpdate = form.buyerId
@@ -392,6 +508,9 @@ export default function NewContractPage() {
 
   return (
     <AppShell title="New Contract" subtitle="Create a new export contract">
+      <div className="mb-2 flex justify-end">
+        <AutosaveIndicator status={autosaveStatus} />
+      </div>
       <StepPills steps={STEPS} current={step} onStepClick={goToStep} />
 
       <div className="ems-card max-w-5xl overflow-visible p-6">
@@ -407,10 +526,12 @@ export default function NewContractPage() {
                   addOptionValue={ADD_OPTION_VALUE}
                   onAddSelect={() => setAddPanel('office')}
                   options={[
+                    { value: '', label: 'Select office' },
                     ...mergedOffices.map((o) => ({ value: o.id, label: o.name })),
                     { value: ADD_OPTION_VALUE, label: '+ Add other office name' },
                   ]}
                 />
+                <FieldError message={fieldErrors.officeId} />
                 {addPanel === 'office' && (
                   <InlineAddPanel
                     title="Add office"
@@ -454,17 +575,24 @@ export default function NewContractPage() {
                 )}
               </Field>
             </div>
-            <Field label="Contract Sent Date">
+            <Field label={BASIC_DATE_LABELS.contractSentDate}>
               <input type="date" className="ems-input" value={form.contractSentDate || ''} onChange={(e) => setField('contractSentDate', e.target.value)} />
+              <FieldError message={fieldErrors.contractSentDate} />
             </Field>
-            <Field label="Contract Date">
+            <Field label={BASIC_DATE_LABELS.contractDate}>
               <input type="date" className="ems-input" value={form.contractDate || ''} onChange={(e) => setField('contractDate', e.target.value)} />
+              <FieldError message={fieldErrors.contractDate} />
             </Field>
             <Field label="Contract Number" hint="Auto: CONT/2026/0001 if blank">
               <input className="ems-input" placeholder="e.g. 05610 or CONT/2026/0010" value={form.contractNumber || ''} onChange={(e) => setField('contractNumber', e.target.value)} />
             </Field>
-            <Field label="Signed Contract Received Date">
+            <Field label={BASIC_DATE_LABELS.receivedDate}>
+              <input type="date" className="ems-input" value={form.receivedDate || ''} onChange={(e) => setField('receivedDate', e.target.value)} />
+              <FieldError message={fieldErrors.receivedDate} />
+            </Field>
+            <Field label={BASIC_DATE_LABELS.signedContractReceivedDate}>
               <input type="date" className="ems-input" value={form.signedContractReceivedDate || ''} onChange={(e) => setField('signedContractReceivedDate', e.target.value)} />
+              <FieldError message={fieldErrors.signedContractReceivedDate} />
             </Field>
             <Field label="Invoice Number (dispatch stage)">
               <input className="ems-input" value={form.invoiceNumber || ''} onChange={(e) => setField('invoiceNumber', e.target.value)} />
@@ -495,7 +623,7 @@ export default function NewContractPage() {
                 onChange={onBuyerChange}
                 placeholder="Select buyer"
                 addOptionValue={ADD_OPTION_VALUE}
-                onAddSelect={() => setAddPanel('buyer')}
+                onAddSelect={() => setShowBuyerModal(true)}
                 options={[
                   { value: '', label: 'Select buyer' },
                   ...mergedBuyers.map((b) => ({
@@ -689,32 +817,80 @@ export default function NewContractPage() {
                 />
               </Field>
             </div>
+            <p className={`mb-2 text-sm ${Math.abs(allocatedSum - form.totalMt) < 0.001 ? 'text-green-700' : 'text-red-600'}`}>
+              Allocated: {allocatedSum.toFixed(3)} MT / Contract total: {form.totalMt} MT
+            </p>
+            <FieldError message={fieldErrors.quantityMt || fieldErrors.totalMt} />
 
-            {containerProducts.map((cp, idx) => (
+            <ContainerTabs
+              active={activeContainerIdx}
+              onChange={setActiveContainerIdx}
+              tabs={containerProducts.map((cp, i) => ({
+                index: i,
+                label: `Container ${i + 1}`,
+                complete: (cp.quantityMt ?? 0) > 0 && !!cp.destinationPortId,
+              }))}
+            />
+            {containerProducts.map((cp, idx) =>
+              idx === activeContainerIdx ? (
               <ContainerShipmentSection
                 key={idx}
                 index={idx}
                 data={cp}
                 ports={masters.ports}
                 showCopyButton={idx > 0}
-                onCopyFromFirst={() => copyContainerShipmentFromFirst(idx)}
+                onCopyFromFirst={() => copyContainerShipmentFromPrevious(idx)}
                 onPatch={(patch) => patchContainerProduct(idx, patch)}
+                errors={fieldErrors}
+                onAddPort={() => {
+                  setPortModalIndex(idx);
+                  setShowPortModal(true);
+                }}
               />
-            ))}
+              ) : null,
+            )}
+            <div className="mt-4 flex justify-between">
+              <button
+                type="button"
+                className="ems-btn-secondary gap-1"
+                disabled={activeContainerIdx === 0}
+                onClick={() => setActiveContainerIdx((i) => Math.max(0, i - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous Container
+              </button>
+              <button
+                type="button"
+                className="ems-btn-secondary gap-1"
+                disabled={activeContainerIdx >= containerProducts.length - 1}
+                onClick={() => setActiveContainerIdx((i) => Math.min(containerProducts.length - 1, i + 1))}
+              >
+                Next Container <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
 
         {/* Product — one form per container */}
         {step === 3 && (
           <div>
-            {containerProducts.map((cp, idx) => (
+            <ContainerTabs
+              active={activeContainerIdx}
+              onChange={setActiveContainerIdx}
+              tabs={containerProducts.map((cp, i) => ({
+                index: i,
+                label: `Container ${i + 1}`,
+                complete: containerStepComplete(cp, 'product'),
+              }))}
+            />
+            {containerProducts.map((cp, idx) =>
+              idx === activeContainerIdx ? (
               <ContainerProductSection
                 key={idx}
                 index={idx}
                 data={cp}
                 products={mergedProducts}
                 showCopyButton={idx > 0}
-                onCopyFromFirst={() => copyContainerFromFirst(idx)}
+                onCopyFromFirst={() => copyContainerFromPrevious(idx)}
                 onChange={(field, value) => updateContainerProduct(idx, field, value)}
                 onPatch={(patch) => patchContainerProduct(idx, patch)}
                 addPanel={productAdd?.containerIndex === idx ? productAdd.panel : null}
@@ -754,117 +930,74 @@ export default function NewContractPage() {
                   }
                 }}
               />
-            ))}
+              ) : null,
+            )}
           </div>
         )}
 
-        {/* Commercial */}
+        {/* Commercial — per container */}
         {step === 4 && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Incoterm (FOB / CIF / CNF)">
-              <EmsSelect
-                value={form.incoterm || 'FOB'}
-                onChange={(v) => setField('incoterm', v)}
-                options={[
-                  { value: 'FOB', label: 'FOB' },
-                  { value: 'CIF', label: 'CIF' },
-                  { value: 'CNF', label: 'CNF' },
-                ]}
+          <div className="space-y-4">
+            <ContainerTabs
+              active={activeContainerIdx}
+              onChange={setActiveContainerIdx}
+              tabs={containerProducts.map((cp, i) => ({
+                index: i,
+                label: `Container ${i + 1}`,
+                complete: containerStepComplete(cp, 'commercial'),
+              }))}
+            />
+            {containerProducts.map((cp, idx) =>
+              idx === activeContainerIdx ? (
+              <ContainerCommercialSection
+                key={idx}
+                container={{
+                  ...cp,
+                  containerIndex: idx + 1,
+                  quantityMt: cp.quantityMt ?? form.totalMt / containers,
+                }}
+                onChange={(patch) => patchContainerProduct(idx, patch)}
+                onRefreshRate={() => refreshExchangeRate(idx)}
               />
-            </Field>
-            <Field label="FOB Price">
-              <input type="number" step="0.01" className="ems-input" value={form.fobPrice ?? ''} onChange={(e) => setField('fobPrice', parseFloat(e.target.value))} />
-            </Field>
-            <Field label="FOB Currency">
-              <EmsSelect
-                value={form.fobCurrency || 'USD'}
-                onChange={(v) => setField('fobCurrency', v)}
-                options={[
-                  { value: 'USD', label: 'USD' },
-                  { value: 'EUR', label: 'EUR' },
-                  { value: 'INR', label: 'INR' },
-                ]}
-              />
-            </Field>
-            <Field label="Exchange Rate">
-              <input type="number" step="0.0001" className="ems-input" value={form.exchangeRate ?? ''} onChange={(e) => setField('exchangeRate', parseFloat(e.target.value))} />
-            </Field>
-            <Field label="FOB INR Per KG"><ReadOnly value={fobInrPerKg} /></Field>
-            <Field label="Freight">
-              <input type="number" step="0.01" className="ems-input" value={form.freight ?? ''} onChange={(e) => setField('freight', parseFloat(e.target.value))} />
-            </Field>
-            <Field label="Freight Unit">
-              <EmsSelect
-                value={form.freightUnit || 'PER_CONTAINER'}
-                onChange={(v) => setField('freightUnit', v)}
-                options={[
-                  { value: 'PER_CONTAINER', label: 'Per Container' },
-                  { value: 'PER_MT', label: 'Per MT' },
-                  { value: 'TOTAL_CONTRACT', label: 'Total Contract' },
-                ]}
-              />
-            </Field>
-            <Field label="Insurance">
-              <input type="number" step="0.01" className="ems-input" value={form.insurance ?? ''} onChange={(e) => setField('insurance', parseFloat(e.target.value))} />
-            </Field>
-            <Field label="CIF Price">
-              <input type="number" step="0.01" className="ems-input" disabled={!form.cifManualOverride}
-                value={form.cifManualOverride ? (form.cifPrice ?? '') : autoCif}
-                onChange={(e) => setField('cifPrice', parseFloat(e.target.value))} />
-            </Field>
-            <Field label="CIF Entry Mode" className="sm:col-span-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={form.cifManualOverride || false} onChange={(e) => setField('cifManualOverride', e.target.checked)} />
-                Manual CIF override (when currencies/units differ)
-              </label>
-            </Field>
-            <Field label="Original Contract Price">
-              <input type="number" step="0.01" className="ems-input" value={form.originalContractPrice ?? form.fobPrice ?? ''} onChange={(e) => setField('originalContractPrice', parseFloat(e.target.value))} />
-            </Field>
-            <Field label="Amendment Price">
-              <input type="number" step="0.01" className="ems-input" value={form.amendmentPrice ?? ''} onChange={(e) => setField('amendmentPrice', parseFloat(e.target.value))} />
-            </Field>
-            <Field label="Amendment Currency">
-              <EmsSelect
-                value={form.amendmentCurrency || ''}
-                onChange={(v) => setField('amendmentCurrency', v)}
-                placeholder="Select currency"
-                options={[
-                  { value: '', label: '—' },
-                  { value: 'USD', label: 'USD' },
-                  { value: 'EUR', label: 'EUR' },
-                  { value: 'INR', label: 'INR' },
-                ]}
-              />
-            </Field>
-            <Field label="Amendment Date">
-              <input type="date" className="ems-input" value={form.amendmentDate || ''} onChange={(e) => setField('amendmentDate', e.target.value)} />
-            </Field>
-            <Field label="Amendment Reason" className="sm:col-span-2">
-              <textarea className="ems-input min-h-[72px]" value={form.amendmentReason || ''} onChange={(e) => setField('amendmentReason', e.target.value)} placeholder="Mandatory when price is amended" />
-            </Field>
-            <Field label="Commercial Remarks" className="sm:col-span-2">
-              <textarea className="ems-input min-h-[72px]" value={form.commercialRemarks || ''} onChange={(e) => setField('commercialRemarks', e.target.value)} />
-            </Field>
+              ) : null,
+            )}
           </div>
         )}
 
         {/* Packaging & Payment */}
         {step === 5 && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Packing Material">
-              <EmsSelect
-                value={form.packagingTypeId || ''}
-                onChange={(v) => setField('packagingTypeId', v)}
-                placeholder="Select type"
-                addOptionValue={ADD_OPTION_VALUE}
-                onAddSelect={() => setAddPanel('packaging')}
-                options={[
-                  { value: '', label: 'Select type' },
-                  ...mergedPackaging.map((p) => ({ value: p.id, label: p.name })),
-                  { value: ADD_OPTION_VALUE, label: '+ Add packaging material' },
-                ]}
+          <div className="space-y-6">
+            <div>
+              <h3 className="mb-3 font-semibold text-slate-800">Container Packaging</h3>
+              <ContainerTabs
+                active={activeContainerIdx}
+                onChange={setActiveContainerIdx}
+                tabs={containerProducts.map((cp, i) => ({
+                  index: i,
+                  label: `Container ${i + 1}`,
+                  complete: containerStepComplete(cp, 'packaging'),
+                }))}
               />
+              {containerProducts.map((cp, idx) =>
+                idx === activeContainerIdx ? (
+                <ContainerPackagingSection
+                  key={idx}
+                  index={idx}
+                  data={cp}
+                  packaging={mergedPackaging}
+                  showCopyButton={idx > 0}
+                  onCopyFromFirst={() => patchContainerProduct(idx, {
+                    packagingTypeId: containerProducts[0].packagingTypeId,
+                    packagingSizeId: containerProducts[0].packagingSizeId,
+                    packingDescription: containerProducts[0].packingDescription,
+                    packingSizeValue: containerProducts[0].packingSizeValue,
+                    packingSizeUnit: containerProducts[0].packingSizeUnit,
+                  })}
+                  onPatch={(patch) => patchContainerProduct(idx, patch)}
+                  onAddPackaging={() => setAddPanel('packaging')}
+                />
+                ) : null,
+              )}
               {addPanel === 'packaging' && (
                 <InlineAddPanel
                   title="Add packaging material"
@@ -873,92 +1006,13 @@ export default function NewContractPage() {
                   onSave={async (values) => {
                     const { pending, pkg } = addPendingPackagingType(pendingMasters, values.name);
                     setPendingMasters(pending);
-                    setField('packagingTypeId', pkg.id);
+                    patchContainerProduct(activeContainerIdx, { packagingTypeId: pkg.id });
                     setAddPanel(null);
                   }}
                 />
               )}
-            </Field>
-            <Field label="Preset Packing Size">
-              <EmsSelect
-                value={form.packagingSizeId || ''}
-                onChange={(v) => {
-                  if (v === ADD_OPTION_VALUE) {
-                    setAddPanel('packagingSize');
-                    return;
-                  }
-                  const size = packagingSizesForType.find((s) => s.id === v);
-                  setField('packagingSizeId', v);
-                  if (size) {
-                    setField('packingDescription', size.label);
-                    setField('packingSizeValue', size.weightKg);
-                    setField('packingSizeUnit', size.weightUnit || 'KG');
-                  }
-                }}
-                placeholder="Select preset (optional)"
-                addOptionValue={ADD_OPTION_VALUE}
-                onAddSelect={() => setAddPanel('packagingSize')}
-                options={[
-                  { value: '', label: 'Select preset (optional)' },
-                  ...packagingSizesForType.map((s) => ({ value: s.id, label: s.label })),
-                  { value: ADD_OPTION_VALUE, label: '+ Add packaging size' },
-                ]}
-              />
-              {addPanel === 'packagingSize' && (
-                <InlineAddPanel
-                  title="Add packaging size"
-                  fields={[
-                    { key: 'weightValue', label: 'Size (number)', type: 'number', placeholder: '25' },
-                    { key: 'weightUnit', label: 'Unit', placeholder: 'KG' },
-                  ]}
-                  onCancel={() => setAddPanel(null)}
-                  onSave={async (values) => {
-                    const typeId = form.packagingTypeId || mergedPackaging[0]?.id;
-                    if (!typeId) throw new Error('Select packaging material first');
-                    const { pending, size } = addPendingPackagingSize(
-                      pendingMasters,
-                      typeId,
-                      parseFloat(values.weightValue),
-                      values.weightUnit || 'KG',
-                      mergedPackaging,
-                    );
-                    setPendingMasters(pending);
-                    setField('packagingSizeId', size.id);
-                    setField('packingSizeValue', size.weightKg);
-                    setField('packingSizeUnit', size.weightUnit || 'KG');
-                    setField('packingDescription', size.label);
-                    setAddPanel(null);
-                  }}
-                />
-              )}
-            </Field>
-            <Field label="Packing Size">
-              <input
-                type="number"
-                min={1}
-                className="ems-input"
-                value={form.packingSizeValue ?? ''}
-                onChange={(e) => setField('packingSizeValue', parseFloat(e.target.value))}
-                placeholder="e.g. 25"
-              />
-            </Field>
-            <Field label="Packing Size Unit">
-              <EmsSelect
-                value={form.packingSizeUnit || 'KG'}
-                onChange={(v) => setField('packingSizeUnit', v)}
-                options={PACKING_SIZE_UNITS.map((u) => ({ value: u.value, label: u.label }))}
-              />
-            </Field>
-            {form.packingSizeUnit === 'OTHERS' && (
-              <Field label="Other unit" className="sm:col-span-2">
-                <input
-                  className="ems-input"
-                  placeholder="Specify unit"
-                  value={form.packingSizeUnitCustom || ''}
-                  onChange={(e) => setField('packingSizeUnitCustom', e.target.value)}
-                />
-              </Field>
-            )}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 border-t border-slate-200 pt-6">
             <Field label="Payment Term">
               <EmsSelect
                 value={form.paymentType || ''}
@@ -999,6 +1053,7 @@ export default function NewContractPage() {
                 )}
               </>
             )}
+          </div>
           </div>
         )}
 
@@ -1081,15 +1136,32 @@ export default function NewContractPage() {
             </ReviewSection>
 
             <ReviewSection title="Section D — Commercial">
-              <ReviewField label="Incoterm" value={form.incoterm} />
-              <ReviewField label="FOB Price" value={form.fobPrice != null ? `${form.fobPrice} ${form.fobCurrency || 'USD'}` : undefined} />
-              <ReviewField label="Freight" value={form.freight} />
-              <ReviewField label="Insurance" value={form.insurance} />
-              <ReviewField label="CIF Price" value={form.cifManualOverride ? form.cifPrice : autoCif} />
-              <ReviewField label="FOB INR / Kg" value={fobInrPerKg} />
-              <ReviewField label="Exchange Rate" value={form.exchangeRate} />
-              <ReviewField label="Original Price" value={form.originalContractPrice ?? form.fobPrice} />
-              <ReviewField label="Amendment Price" value={form.amendmentPrice} />
+              {containerProducts.map((cp, idx) => {
+                const calc = enrichContainerCommercial({
+                  incoterm: cp.incoterm ?? 'FOB',
+                  fobPrice: cp.fobPrice,
+                  exchangeRate: cp.exchangeRate,
+                  quantityMt: form.totalMt / containers,
+                  totalFreight: cp.totalFreight,
+                  insurance: cp.insurance,
+                });
+                return (
+                  <div key={idx} className={`grid gap-3 sm:col-span-2 sm:grid-cols-2 ${idx > 0 ? 'mt-2 border-t border-slate-100 pt-4' : ''}`}>
+                    {containers > 1 && (
+                      <p className="text-sm font-semibold text-slate-700 sm:col-span-2">Container {idx + 1}</p>
+                    )}
+                    <ReviewField label="Incoterm" value={cp.incoterm ?? 'FOB'} />
+                    <ReviewField label="FOB Price" value={cp.fobPrice != null ? `${cp.fobPrice} ${cp.fobCurrency || 'USD'}` : undefined} />
+                    <ReviewField label="Exchange Rate" value={cp.exchangeRate} />
+                    <ReviewField label="FOB INR / Kg" value={calc.fobInrPerKg?.toFixed(2)} />
+                    <ReviewField label="Total Freight" value={cp.totalFreight} />
+                    <ReviewField label="Freight per MT" value={calc.freightPerMt?.toFixed(2)} />
+                    <ReviewField label="Insurance" value={cp.insurance} />
+                    <ReviewField label="CIF Price" value={calc.cifPrice?.toFixed(2)} />
+                    <ReviewField label="CNF Price" value={calc.cnfPrice?.toFixed(2)} />
+                  </div>
+                );
+              })}
             </ReviewSection>
 
             <ReviewSection title="Packaging & Payment">
@@ -1136,6 +1208,29 @@ export default function NewContractPage() {
           </div>
         </div>
       </div>
+
+      <AddBuyerModal
+        open={showBuyerModal}
+        countries={mergedCountries}
+        ports={masters.ports}
+        officeId={form.officeId}
+        onClose={() => setShowBuyerModal(false)}
+        onSaved={(buyer) => {
+          setMasters((m) => ({ ...m, buyers: [...m.buyers.filter((b) => b.id !== buyer.id), buyer] }));
+          applyBuyerToForm(buyer, buyer.id);
+          setShowBuyerModal(false);
+        }}
+      />
+      <AddPortModal
+        open={showPortModal}
+        countries={mergedCountries}
+        onClose={() => setShowPortModal(false)}
+        onSaved={(port) => {
+          setMasters((m) => ({ ...m, ports: [...m.ports, port] }));
+          patchContainerProduct(portModalIndex, { destinationPortId: port.id });
+          setShowPortModal(false);
+        }}
+      />
     </AppShell>
   );
 }

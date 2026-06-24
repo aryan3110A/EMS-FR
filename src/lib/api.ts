@@ -69,10 +69,34 @@ export const api = {
     }),
   updateContract: (id: string, data: Partial<ContractForm>) =>
     request<Contract>(`/contracts/${id}`, { method: 'PATCH', body: JSON.stringify(toContractApiPayload(data)) }),
+  exchangeRate: (currency: string) =>
+    request<{ rate: number; source: string; fetchedAt: string }>(
+      `/contracts/exchange-rate?currency=${encodeURIComponent(currency)}`,
+    ),
+  amendContainerCommercial: (
+    contractId: string,
+    containerId: string,
+    data: { reason: string; newPrice: number; currency: string },
+  ) =>
+    request<Contract>(`/contracts/${contractId}/containers/${containerId}/amend-commercial`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  contractAudit: (id: string) => request<unknown[]>(`/contracts/${id}/audit`),
+  notifications: () =>
+    request<{ id: string; message: string; contractId?: string; createdAt: string; readAt?: string | null }[]>(
+      '/notifications',
+    ),
+  markNotificationRead: (id: string) =>
+    request<{ id: string }>(`/notifications/${id}/read`, { method: 'PATCH' }),
   masters: {
     salespersons: () => request<Salesperson[]>('/masters/salespersons'),
-    buyers: (officeId?: string) => {
-      const q = officeId ? `?officeId=${encodeURIComponent(officeId)}` : '';
+    buyers: (officeId?: string, search?: string, includeInactive?: boolean) => {
+      const params = new URLSearchParams();
+      if (officeId) params.set('officeId', officeId);
+      if (search) params.set('search', search);
+      if (includeInactive) params.set('includeInactive', 'true');
+      const q = params.toString() ? `?${params.toString()}` : '';
       return request<Buyer[]>(`/masters/buyers${q}`);
     },
     updateBuyer: (
@@ -80,12 +104,16 @@ export const api = {
       data: Partial<
         Pick<Buyer, 'address' | 'contactPerson' | 'email' | 'phone' | 'euClassification' | 'code'> & {
           countryId?: string;
+          defaultPortId?: string;
         }
       >,
     ) => request<Buyer>(`/masters/buyers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     products: () => request<Product[]>('/masters/products'),
     packaging: () => request<PackagingType[]>('/masters/packaging'),
-    ports: () => request<Port[]>('/masters/ports'),
+    ports: (includeInactive?: boolean) => {
+      const q = includeInactive ? '?includeInactive=true' : '';
+      return request<Port[]>(`/masters/ports${q}`);
+    },
     countries: () => request<Country[]>('/masters/countries'),
     createCountry: (data: { name: string; euClassification?: string; code?: string }) =>
       request<Country>('/masters/countries', { method: 'POST', body: JSON.stringify(data) }),
@@ -93,6 +121,12 @@ export const api = {
       request<Salesperson>('/masters/salespersons', { method: 'POST', body: JSON.stringify(data) }),
     createBuyer: (data: { name: string; countryId: string; officeId?: string; code?: string }) =>
       request<Buyer>('/masters/buyers', { method: 'POST', body: JSON.stringify(data) }),
+    createPort: (data: { name: string; countryId: string; code?: string }) =>
+      request<Port>('/masters/ports', { method: 'POST', body: JSON.stringify(data) }),
+    updatePort: (id: string, data: { name?: string; code?: string; countryId?: string; isActive?: boolean }) =>
+      request<Port>(`/masters/ports/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    deactivateBuyer: (id: string) =>
+      request<Buyer>(`/masters/buyers/${id}/deactivate`, { method: 'PATCH' }),
     createProduct: (data: { name: string; code?: string }) =>
       request<Product>('/masters/products', { method: 'POST', body: JSON.stringify(data) }),
     createProductVariant: (data: { productId: string; name: string; processingType?: string }) =>
@@ -138,6 +172,7 @@ export interface Buyer {
   email?: string;
   phone?: string;
   euClassification?: string;
+  isActive?: boolean;
   country?: { id: string; name: string; code: string; euClassification: string };
   defaultPort?: Port;
 }
@@ -160,8 +195,10 @@ export interface PackagingType {
 export interface Port {
   id: string;
   name: string;
+  code?: string;
   portType: string;
-  country?: { name: string };
+  isActive?: boolean;
+  country?: { id?: string; name: string };
 }
 
 export interface Country {
@@ -182,6 +219,26 @@ export interface ContainerProduct {
   shipmentHalf?: 'FIRST_HALF' | 'SECOND_HALF';
   expectedShipmentDate?: string;
   containerNo?: string;
+  quantityMt?: number;
+  packagingTypeId?: string;
+  packagingSizeId?: string;
+  packingDescription?: string;
+  packingSizeValue?: number;
+  packingSizeUnit?: string;
+  incoterm?: 'FOB' | 'CIF' | 'CNF';
+  fobPrice?: number;
+  fobCurrency?: string;
+  exchangeRate?: number;
+  exchangeRateAt?: string;
+  exchangeRateSource?: string;
+  exchangeRateManual?: boolean;
+  totalFreight?: number;
+  freightPerMt?: number;
+  fobInrPerKg?: number;
+  insurance?: number;
+  cifPrice?: number;
+  cnfPrice?: number;
+  commercialRemarks?: string;
 }
 
 export interface Contract {
@@ -207,6 +264,7 @@ export interface Contract {
   shipmentMonth?: string;
   shipmentHalf?: string;
   status: string;
+  incoterm?: string;
   euClassification?: string;
   buyerLotNo?: string;
   contractSentDate?: string;
@@ -255,9 +313,42 @@ export interface ContractContainer {
   shipmentMonth?: string;
   shipmentYear?: number;
   shipmentHalf?: string;
+  incoterm?: string;
+  fobPrice?: number;
+  fobCurrency?: string;
+  exchangeRate?: number;
+  exchangeRateAt?: string;
+  exchangeRateSource?: string;
+  fobInrPerKg?: number;
+  totalFreight?: number;
+  freightPerMt?: number;
+  insurance?: number;
+  cifPrice?: number;
+  cnfPrice?: number;
+  originalCifCnfPrice?: number;
+  currentCifCnfPrice?: number;
+  commercialRemarks?: string;
+  containerStatus?: string;
+  packagingTypeId?: string;
+  packagingSizeId?: string;
+  packingDescription?: string;
+  packingSizeValue?: number;
+  packingSizeUnit?: string;
+  packagingType?: { code: string; name: string };
+  packagingSize?: { label: string };
   product?: Product;
   productVariant?: { id?: string; name: string };
   destinationPort?: Port;
+  amendments?: {
+    id: string;
+    incoterm: string;
+    previousValue: number;
+    amendedValue: number;
+    currency: string;
+    reason: string;
+    amendmentDate: string;
+    amendedBy?: { name: string };
+  }[];
 }
 
 export interface ContractForm {
@@ -376,5 +467,31 @@ export interface DashboardStats {
   confirmed: number;
   inProduction: number;
   ready: number;
+  underPreparation?: number;
+  containersShipped?: number;
+  containersReachedPort?: number;
   recent: Contract[];
+  upcoming?: {
+    from: string;
+    to: string;
+    totalContainers: number;
+    totalMt: number;
+    contractCount: number;
+    productCount: number;
+    byProduct: { code: string; name: string; containers: number; mt: number; contracts: string[] }[];
+    byPeriod: { FIRST_HALF: number; SECOND_HALF: number };
+    shipments: {
+      id: string;
+      contractId: string;
+      contractNumber: string;
+      containerIndex: number;
+      buyer?: string;
+      product?: string;
+      quantityMt?: number;
+      expectedShipmentDate?: string;
+      destinationPort?: string;
+      shipmentHalf?: string;
+      status?: string;
+    }[];
+  };
 }
