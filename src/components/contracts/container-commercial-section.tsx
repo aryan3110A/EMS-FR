@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { Field, ReadOnly } from '@/components/contracts/form-fields';
 import { EmsSelect } from '@/components/ui/ems-select';
-import { INCOTERM_OPTIONS } from '@/lib/contract-labels';
+import { INCOTERM_OPTIONS, CURRENCY_OPTIONS } from '@/lib/contract-labels';
 import {
   enrichContainerCommercial,
   commercialFieldVisibility,
@@ -12,6 +12,8 @@ import {
 import { PRODUCT_SPECIFICATIONS } from '@/lib/commercial-calculations';
 import { formatNumber } from '@/lib/utils';
 import type { ContainerProduct } from '@/lib/api';
+import { RefreshCw } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export type ContainerCommercialData = ContainerProduct & {
   containerIndex: number;
@@ -32,9 +34,20 @@ type Props = {
   onChange: (patch: Partial<ContainerCommercialData>) => void;
   onRefreshRate?: () => void;
   readOnly?: boolean;
+  isRefreshing?: boolean;
+  showCopyButton?: boolean;
+  onCopyFromFirst?: () => void;
 };
 
-export function ContainerCommercialSection({ container, onChange, onRefreshRate, readOnly }: Props) {
+export function ContainerCommercialSection({
+  container,
+  onChange,
+  onRefreshRate,
+  readOnly,
+  isRefreshing,
+  showCopyButton,
+  onCopyFromFirst,
+}: Props) {
   const incoterm = (container.incoterm ?? 'FOB') as IncotermType;
   const visibility = commercialFieldVisibility(incoterm);
 
@@ -53,7 +66,14 @@ export function ContainerCommercialSection({ container, onChange, onRefreshRate,
 
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
-      <h4 className="font-semibold text-slate-800">Container {container.containerIndex} — Commercial</h4>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="font-semibold text-slate-800">Container {container.containerIndex} — Commercial</h4>
+        {showCopyButton && onCopyFromFirst && (
+          <button type="button" onClick={onCopyFromFirst} className="ems-btn-secondary text-sm">
+            Copy details from previous container
+          </button>
+        )}
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Incoterm">
@@ -86,11 +106,11 @@ export function ContainerCommercialSection({ container, onChange, onRefreshRate,
         </Field>
 
         <Field label="FOB Currency">
-          <input
-            className="ems-input"
+          <EmsSelect
             value={container.fobCurrency ?? 'USD'}
+            onChange={(v) => onChange({ fobCurrency: v })}
+            options={[...CURRENCY_OPTIONS]}
             disabled={readOnly}
-            onChange={(e) => onChange({ fobCurrency: e.target.value })}
           />
         </Field>
 
@@ -104,14 +124,19 @@ export function ContainerCommercialSection({ container, onChange, onRefreshRate,
               onChange={(e) => onChange({ exchangeRate: e.target.value ? Number(e.target.value) : undefined, exchangeRateSource: 'MANUAL' })}
             />
             {onRefreshRate && !readOnly && (
-              <button type="button" className="ems-btn-secondary shrink-0 text-xs" onClick={onRefreshRate}>
-                Refresh
+              <button
+                type="button"
+                className="ems-btn-secondary shrink-0 p-2.5 flex items-center justify-center"
+                onClick={onRefreshRate}
+                disabled={isRefreshing}
+              >
+                <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
               </button>
             )}
           </div>
           {container.exchangeRateAt && (
             <p className="mt-1 text-xs text-slate-500">
-              {container.exchangeRateSource ?? 'API'} · {new Date(container.exchangeRateAt).toLocaleString()}
+              {(!container.exchangeRateSource || container.exchangeRateSource === 'API') ? 'LIVE' : container.exchangeRateSource} · {new Date(container.exchangeRateAt).toLocaleString()}
             </p>
           )}
         </Field>

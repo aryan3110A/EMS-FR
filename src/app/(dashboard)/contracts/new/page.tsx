@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { AppShell } from '@/components/layout/sidebar';
 import { Field, ReadOnly, StepPills, CONTRACT_STATUSES, ReviewSection, ReviewField } from '@/components/contracts/form-fields';
 import { ContainerProductSection } from '@/components/contracts/container-product-section';
@@ -47,7 +48,7 @@ import {
   formatShipmentMonthDb,
   formatShipmentPeriodLabel,
 } from '@/lib/shipment-period';
-import { ChevronLeft, ChevronRight, Save } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, ShieldAlert } from 'lucide-react';
 
 const STEPS = ['Basic Info', 'Buyer', 'Quantity', 'Product', 'Commercial', 'Packaging & Payment', 'Review'];
 
@@ -70,6 +71,16 @@ export default function NewContractPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('ems_user') || '{}');
+      setUserRole(u.role || 'GUEST');
+    } catch {
+      setUserRole('GUEST');
+    }
+  }, []);
   const [masters, setMasters] = useState<{
     offices: Office[];
     salespersons: Salesperson[];
@@ -98,6 +109,7 @@ export default function NewContractPage() {
     () => mergeProducts(masters.products, pendingMasters),
     [masters.products, pendingMasters],
   );
+
   const mergedPackaging = useMemo(
     () => mergePackaging(masters.packaging, pendingMasters),
     [masters.packaging, pendingMasters],
@@ -120,6 +132,7 @@ export default function NewContractPage() {
   const [activeContainerIdx, setActiveContainerIdx] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [draftContractId, setDraftContractId] = useState<string | null>(null);
+  const [refreshingIdx, setRefreshingIdx] = useState<number | null>(null);
   const [containerProducts, setContainerProducts] = useState<ContainerProduct[]>([emptyContainerProduct()]);
   const [newBuyerCountryId, setNewBuyerCountryId] = useState('');
   const [newCountryEu, setNewCountryEu] = useState('NON_EU');
@@ -264,6 +277,32 @@ export default function NewContractPage() {
       next[targetIndex] = {
         ...next[targetIndex],
         destinationPortId: source.destinationPortId,
+        expectedShipmentDate: source.expectedShipmentDate,
+        shipmentMonthYear: source.shipmentMonthYear,
+        shipmentHalf: source.shipmentHalf,
+        containerNo: source.containerNo,
+      };
+      return next;
+    });
+  }
+
+  function copyContainerCommercialFromPrevious(targetIndex: number) {
+    if (targetIndex <= 0) return;
+    setContainerProducts((prev) => {
+      const source = prev[targetIndex - 1];
+      const next = [...prev];
+      next[targetIndex] = {
+        ...next[targetIndex],
+        incoterm: source.incoterm,
+        fobPrice: source.fobPrice,
+        fobCurrency: source.fobCurrency,
+        exchangeRate: source.exchangeRate,
+        exchangeRateAt: source.exchangeRateAt,
+        exchangeRateSource: source.exchangeRateSource,
+        exchangeRateManual: source.exchangeRateManual,
+        totalFreight: source.totalFreight,
+        insurance: source.insurance,
+        commercialRemarks: source.commercialRemarks,
       };
       return next;
     });
@@ -313,9 +352,12 @@ export default function NewContractPage() {
     applyBuyerToForm(buyer, buyerId);
   }
 
-  async function refreshExchangeRate(containerIndex: number) {
-    const c = containerProducts[containerIndex];
-    const currency = c.fobCurrency || 'USD';
+  async function refreshExchangeRate(containerIndex: number, currencyOverride?: string) {
+    const currency = currencyOverride || containerProducts[containerIndex].fobCurrency || 'USD';
+    if (currencyOverride) {
+      patchContainerProduct(containerIndex, { fobCurrency: currencyOverride });
+    }
+    setRefreshingIdx(containerIndex);
     try {
       const { rate, source, fetchedAt } = await api.exchangeRate(currency);
       patchContainerProduct(containerIndex, {
@@ -326,6 +368,8 @@ export default function NewContractPage() {
       });
     } catch (e) {
       showError(e, 'Failed to fetch exchange rate');
+    } finally {
+      setRefreshingIdx(null);
     }
   }
 
@@ -355,6 +399,7 @@ export default function NewContractPage() {
 
   function goToStep(nextStep: number) {
     setStep(nextStep);
+    setActiveContainerIdx(0);
   }
 
   function goNext() {
@@ -365,7 +410,46 @@ export default function NewContractPage() {
       if (firstError) showError(firstError);
       return;
     }
+
+    if ([2, 3, 4, 5].includes(step)) {
+      const isContainerIncomplete = (cp: ContainerProduct, s: number) => {
+        if (s === 2) {
+          return !((cp.quantityMt ?? 0) > 0 && !!cp.destinationPortId && !!cp.expectedShipmentDate);
+        }
+        if (s === 3) {
+          return !containerStepComplete(cp, 'product');
+        }
+        if (s === 4) {
+          return !containerStepComplete(cp, 'commercial');
+        }
+        if (s === 5) {
+          return !containerStepComplete(cp, 'packaging');
+        }
+        return false;
+      };
+
+      let nextIncompleteIdx = -1;
+      for (let i = 0; i < containerProducts.length; i++) {
+        if (isContainerIncomplete(containerProducts[i], step)) {
+          nextIncompleteIdx = i;
+          break;
+        }
+      }
+
+      if (nextIncompleteIdx !== -1) {
+        if (nextIncompleteIdx !== activeContainerIdx) {
+          setActiveContainerIdx(nextIncompleteIdx);
+          showInfo(`Switched to Container ${nextIncompleteIdx + 1} to fill remaining details.`);
+          return;
+        } else {
+          showError(`Please fill the details for Container ${activeContainerIdx + 1} first.`);
+          return;
+        }
+      }
+    }
+
     setFieldErrors({});
+    setActiveContainerIdx(0);
     setStep(step + 1);
   }
 
@@ -504,6 +588,30 @@ export default function NewContractPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (userRole === null) {
+    return (
+      <AppShell title="New Contract">
+        <div className="flex h-[200px] items-center justify-center">
+          <p className="text-slate-500">Checking permissions…</p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(userRole)) {
+    return (
+      <AppShell title="Access Denied">
+        <div className="ems-card p-5 text-center text-red-500 font-semibold flex flex-col items-center justify-center gap-3">
+          <ShieldAlert className="h-10 w-10 text-rose-500" />
+          <p>Access Denied. You do not have permission to create contracts.</p>
+          <Link href="/dashboard" className="ems-btn-primary text-xs mt-2">
+            Back to Dashboard
+          </Link>
+        </div>
+      </AppShell>
+    );
   }
 
   return (
@@ -846,6 +954,7 @@ export default function NewContractPage() {
                   setPortModalIndex(idx);
                   setShowPortModal(true);
                 }}
+                hideBorder={true}
               />
               ) : null,
             )}
@@ -929,6 +1038,7 @@ export default function NewContractPage() {
                     });
                   }
                 }}
+                hideBorder={true}
               />
               ) : null,
             )}
@@ -956,8 +1066,17 @@ export default function NewContractPage() {
                   containerIndex: idx + 1,
                   quantityMt: cp.quantityMt ?? form.totalMt / containers,
                 }}
-                onChange={(patch) => patchContainerProduct(idx, patch)}
+                onChange={(patch) => {
+                  if (patch.fobCurrency !== undefined) {
+                    refreshExchangeRate(idx, patch.fobCurrency);
+                  } else {
+                    patchContainerProduct(idx, patch);
+                  }
+                }}
                 onRefreshRate={() => refreshExchangeRate(idx)}
+                isRefreshing={refreshingIdx === idx}
+                showCopyButton={idx > 0}
+                onCopyFromFirst={() => copyContainerCommercialFromPrevious(idx)}
               />
               ) : null,
             )}
@@ -995,6 +1114,7 @@ export default function NewContractPage() {
                   })}
                   onPatch={(patch) => patchContainerProduct(idx, patch)}
                   onAddPackaging={() => setAddPanel('packaging')}
+                  hideBorder={true}
                 />
                 ) : null,
               )}
@@ -1165,25 +1285,36 @@ export default function NewContractPage() {
             </ReviewSection>
 
             <ReviewSection title="Packaging & Payment">
-              <ReviewField
-                label="Packing Material"
-                value={mergedPackaging.find((p) => p.id === form.packagingTypeId)?.name}
-              />
-              <ReviewField label="Packing Size" value={buildPackingDescription()} />
-              <ReviewField
-                label="Payment Term"
-                value={
-                  form.paymentType === 'ADVANCE'
-                    ? `Advance ${form.advancePercentage ?? 10}% — ${BALANCE_PAYMENT_METHODS.find((m) => m.value === form.balancePaymentMode)?.label || form.balancePaymentMode || ''}${form.balancePaymentMode === 'OTHERS' && form.balancePaymentStage ? `: ${form.balancePaymentStage}` : ''}`
-                    : form.paymentType === 'CAD'
-                      ? 'CAD'
-                      : form.paymentType === 'DIRECT'
-                        ? 'Direct'
-                        : form.paymentType === 'OTHERS'
-                          ? 'Others'
-                          : form.paymentType
-                }
-              />
+              {containerProducts.map((cp, idx) => {
+                const pkgMaterial = mergedPackaging.find((p) => p.id === cp.packagingTypeId)?.name;
+                const pkgSize = cp.packingDescription || mergedPackaging.flatMap((p) => p.sizes || []).find((s) => s.id === cp.packagingSizeId)?.label;
+                return (
+                  <div key={idx} className={`grid gap-3 sm:col-span-2 sm:grid-cols-2 ${idx > 0 ? 'mt-2 border-t border-slate-100 pt-4' : ''}`}>
+                    {containers > 1 && (
+                      <p className="text-sm font-semibold text-slate-700 sm:col-span-2">Container {idx + 1}</p>
+                    )}
+                    <ReviewField label="Packing Material" value={pkgMaterial} />
+                    <ReviewField label="Packing Size" value={pkgSize} />
+                  </div>
+                );
+              })}
+              <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2 mt-4 border-t border-slate-100 pt-4">
+                <p className="text-sm font-semibold text-slate-700 sm:col-span-2">Payment Details</p>
+                <ReviewField
+                  label="Payment Term"
+                  value={
+                    form.paymentType === 'ADVANCE'
+                      ? `Advance ${form.advancePercentage ?? 10}% — ${BALANCE_PAYMENT_METHODS.find((m) => m.value === form.balancePaymentMode)?.label || form.balancePaymentMode || ''}${form.balancePaymentMode === 'OTHERS' && form.balancePaymentStage ? `: ${form.balancePaymentStage}` : ''}`
+                      : form.paymentType === 'CAD'
+                        ? 'CAD'
+                        : form.paymentType === 'DIRECT'
+                          ? 'Direct'
+                          : form.paymentType === 'OTHERS'
+                            ? 'Others'
+                            : form.paymentType
+                  }
+                />
+              </div>
             </ReviewSection>
           </div>
         )}

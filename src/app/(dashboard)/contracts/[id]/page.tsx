@@ -90,9 +90,16 @@ export default function ContractDetailPage() {
 
   const canEdit = (() => {
     const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+    const hasEditRole = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(user.role);
+    if (!hasEditRole) return false;
     const isAdmin = user.role === 'SUPER_ADMIN' || user.role === 'OFFICE_ADMIN';
     if (isAdmin) return true;
     return ['DRAFT', 'UNDER_PREPARATION', 'AWAITING_SIGNED_CONTRACT'].includes(contract.status);
+  })();
+
+  const isOwner = (() => {
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+    return ['SUPER_ADMIN', 'OFFICE_ADMIN'].includes(user.role);
   })();
 
   const canAmend = (c: ContractContainer) => {
@@ -253,10 +260,12 @@ export default function ContractDetailPage() {
 
       <AmendmentHistory containers={containers} />
 
-      <div className="mt-4 ems-card p-5">
-        <h3 className="mb-3 font-semibold text-slate-800">Audit Log</h3>
-        <AuditLogPanel contractId={contract.id} />
-      </div>
+      {isOwner && (
+        <div className="mt-4 ems-card p-5">
+          <h3 className="mb-3 font-semibold text-slate-800">Audit Log</h3>
+          <AuditLogPanel contractId={contract.id} />
+        </div>
+      )}
 
       {amendTarget && amendTarget.id !== 'legacy' && (
         <AmendmentModal

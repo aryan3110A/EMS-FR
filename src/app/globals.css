@@ -37,25 +37,29 @@ body {
   @apply relative w-full;
 }
 
+/* ─── Custom EmsSelect trigger button ─── */
 .ems-select {
-  @apply w-full cursor-pointer rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/80 px-3.5 py-2.5 text-sm font-medium text-slate-800 shadow-sm outline-none transition-all;
-  @apply hover:border-blue-300 hover:from-blue-50/30 hover:to-white hover:shadow-md;
+  @apply w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-800 shadow-sm outline-none transition-all;
+  @apply hover:border-blue-300 hover:shadow-md;
   @apply focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10;
 }
 
+/* ─── Custom dropdown panel ─── */
 .ems-select-dropdown {
-  @apply z-[9999] overflow-hidden rounded-xl border border-slate-200/90 bg-white;
+  @apply z-[9999] overflow-hidden bg-white;
+  border-radius: 14px;
+  border: 1px solid rgb(226 232 240 / 0.8);
   box-shadow:
     0 0 0 1px rgb(15 23 42 / 0.04),
-    0 10px 40px -10px rgb(15 23 42 / 0.18),
-    0 4px 12px -2px rgb(15 23 42 / 0.08);
-  animation: ems-dropdown-in 0.15s ease-out;
+    0 4px 6px -1px rgb(15 23 42 / 0.08),
+    0 16px 48px -8px rgb(15 23 42 / 0.20);
+  animation: ems-dropdown-in 0.13s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes ems-dropdown-in {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.98);
+    transform: translateY(-4px) scale(0.97);
   }
   to {
     opacity: 1;

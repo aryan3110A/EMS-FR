@@ -50,7 +50,18 @@ export const api = {
   offices: () => request<Office[]>('/offices'),
   createOffice: (data: { name: string; city?: string }) =>
     request<Office>('/offices', { method: 'POST', body: JSON.stringify(data) }),
-  dashboard: () => request<DashboardStats>('/contracts/dashboard'),
+  dashboard: (params?: Record<string, any>) => {
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      Object.entries(params).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          cleanParams[key] = String(val);
+        }
+      });
+    }
+    const q = Object.keys(cleanParams).length ? '?' + new URLSearchParams(cleanParams).toString() : '';
+    return request<DashboardStats>(`/contracts/dashboard${q}`);
+  },
   contracts: (params?: Record<string, string>) => {
     const q = params ? '?' + new URLSearchParams(params).toString() : '';
     return request<Contract[]>(`/contracts${q}`);
@@ -83,6 +94,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   contractAudit: (id: string) => request<unknown[]>(`/contracts/${id}/audit`),
+  allAudits: () => request<any[]>('/contracts/audit/all'),
   notifications: () =>
     request<{ id: string; message: string; contractId?: string; createdAt: string; readAt?: string | null }[]>(
       '/notifications',
@@ -494,4 +506,17 @@ export interface DashboardStats {
       status?: string;
     }[];
   };
+  shipped?: {
+    totalContainers: number;
+    totalMt: number;
+    byProduct: {
+      code: string;
+      name: string;
+      quantity: number;
+      containers: number;
+      contracts: string[];
+      contractMap?: Record<string, string>;
+    }[];
+  };
+  allContainers?: any[];
 }

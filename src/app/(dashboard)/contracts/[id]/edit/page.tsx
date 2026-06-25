@@ -24,7 +24,7 @@ import { showError, showSuccess } from '@/lib/toast';
 import { AddPortModal } from '@/components/ports/add-port-modal';
 import { distributeContainerMt, validateStep } from '@/lib/contract-validation';
 import { formatShipmentPeriodLabel } from '@/lib/shipment-period';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save, ShieldAlert } from 'lucide-react';
 
 const STEPS = ['Basic Info', 'Buyer', 'Quantity', 'Product', 'Commercial', 'Review'];
 
@@ -35,6 +35,16 @@ export default function EditContractPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ContractForm | null>(null);
   const [containerProducts, setContainerProducts] = useState<ContainerProduct[]>([]);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('ems_user') || '{}');
+      setUserRole(u.role || 'GUEST');
+    } catch {
+      setUserRole('GUEST');
+    }
+  }, []);
   const [ports, setPorts] = useState<Port[]>([]);
   const [products, setProducts] = useState<Awaited<ReturnType<typeof api.masters.products>>>([]);
   const [buyers, setBuyers] = useState<Awaited<ReturnType<typeof api.masters.buyers>>>([]);
@@ -54,6 +64,7 @@ export default function EditContractPage() {
     setForm(contractToForm(contract));
     setContainerProducts(contractToContainerProducts(contract));
   }, [contract]);
+
 
   useEffect(() => {
     Promise.all([
@@ -95,6 +106,8 @@ export default function EditContractPage() {
     { enabled: !!form && form.status === 'DRAFT' },
   );
 
+  const [refreshingIdx, setRefreshingIdx] = useState<number | null>(null);
+
   function patchContainer(index: number, patch: Partial<ContainerProduct>) {
     setContainerProducts((prev) => {
       const next = [...prev];
@@ -103,18 +116,47 @@ export default function EditContractPage() {
     });
   }
 
-  async function refreshExchangeRate(containerIndex: number) {
-    const c = containerProducts[containerIndex];
+  async function refreshExchangeRate(containerIndex: number, currencyOverride?: string) {
+    const currency = currencyOverride || containerProducts[containerIndex].fobCurrency || 'USD';
+    if (currencyOverride) {
+      patchContainer(containerIndex, { fobCurrency: currencyOverride });
+    }
+    setRefreshingIdx(containerIndex);
     try {
-      const { rate, source, fetchedAt } = await api.exchangeRate(c.fobCurrency || 'USD');
+      const { rate, source, fetchedAt } = await api.exchangeRate(currency);
       patchContainer(containerIndex, {
         exchangeRate: rate,
         exchangeRateSource: source,
         exchangeRateAt: fetchedAt,
+        exchangeRateManual: false,
       });
     } catch (e) {
       showError(e, 'Failed to fetch exchange rate');
+    } finally {
+      setRefreshingIdx(null);
     }
+  }
+
+  function copyContainerCommercialFromPrevious(targetIndex: number) {
+    if (targetIndex <= 0) return;
+    setContainerProducts((prev) => {
+      const source = prev[targetIndex - 1];
+      const next = [...prev];
+      next[targetIndex] = {
+        ...next[targetIndex],
+        incoterm: source.incoterm,
+        fobPrice: source.fobPrice,
+        fobCurrency: source.fobCurrency,
+        exchangeRate: source.exchangeRate,
+        exchangeRateAt: source.exchangeRateAt,
+        exchangeRateSource: source.exchangeRateSource,
+        exchangeRateManual: source.exchangeRateManual,
+        totalFreight: source.totalFreight,
+        insurance: source.insurance,
+        commercialRemarks: source.commercialRemarks,
+      };
+      return next;
+    });
   }
 
   async function handleSave() {
@@ -133,7 +175,7 @@ export default function EditContractPage() {
 
   const selectedBuyer = useMemo(() => buyers.find((b) => b.id === form?.buyerId), [buyers, form?.buyerId]);
 
-  if (loading && !contract) {
+  if (userRole === null || loading || !form) {
     return (
       <AppShell title="Edit Contract">
         <ContractDetailSkeleton />
@@ -141,7 +183,21 @@ export default function EditContractPage() {
     );
   }
 
-  if (!contract || !form) {
+  if (!['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(userRole)) {
+    return (
+      <AppShell title="Access Denied">
+        <div className="ems-card p-5 text-center text-red-500 font-semibold flex flex-col items-center justify-center gap-3">
+          <ShieldAlert className="h-10 w-10 text-rose-500" />
+          <p>Access Denied. You do not have permission to edit contracts.</p>
+          <Link href="/dashboard" className="ems-btn-primary text-xs mt-2">
+            Back to Dashboard
+          </Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!contract) {
     return (
       <AppShell title="Edit Contract">
         <p className="text-center text-sm text-slate-500">Contract not found.</p>
@@ -272,8 +328,17 @@ export default function EditContractPage() {
               <ContainerCommercialSection
                 key={idx}
                 container={{ ...cp, containerIndex: idx + 1, quantityMt: form.totalMt / containers }}
-                onChange={(patch) => patchContainer(idx, patch)}
+                onChange={(patch) => {
+                  if (patch.fobCurrency !== undefined) {
+                    refreshExchangeRate(idx, patch.fobCurrency);
+                  } else {
+                    patchContainer(idx, patch);
+                  }
+                }}
                 onRefreshRate={() => refreshExchangeRate(idx)}
+                isRefreshing={refreshingIdx === idx}
+                showCopyButton={idx > 0}
+                onCopyFromFirst={() => copyContainerCommercialFromPrevious(idx)}
               />
             ))}
           </div>

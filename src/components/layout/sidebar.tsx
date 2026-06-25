@@ -73,32 +73,58 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-4">
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Main Menu</p>
-        {NAV.map(({ href, label, icon: Icon }) => {
-          const active = (() => {
-            if (href === '/dashboard') return pathname === '/dashboard';
-            if (href === '/contracts/new') return pathname === '/contracts/new';
-            if (href === '/contracts') {
-              return pathname === '/contracts' || (pathname.startsWith('/contracts/') && pathname !== '/contracts/new');
-            }
-            return pathname === href || pathname.startsWith(`${href}/`);
-          })();
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                active
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
-              )}
-            >
-              <Icon className={cn('h-[18px] w-[18px]', active ? 'text-white' : 'text-slate-400 group-hover:text-blue-600')} />
-              <span className="flex-1">{label}</span>
-              {active && <ChevronRight className="h-4 w-4 opacity-80" />}
-            </Link>
-          );
-        })}
+        {(() => {
+          const role = user.role;
+          if (!role) return null;
+
+          const items = [
+            { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { href: '/contracts', label: 'Contracts', icon: FileText },
+          ];
+
+          if (['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(role)) {
+            items.push({ href: '/contracts/new', label: 'New Contract', icon: FilePlus2 });
+          }
+
+          if (['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(role)) {
+            items.push({ href: '/masters', label: 'Masters', icon: Package });
+          }
+
+          if (['SUPER_ADMIN', 'OFFICE_ADMIN', 'ACCOUNTS_TEAM'].includes(role)) {
+            items.push({ href: '/reports', label: 'Reports', icon: BarChart3 });
+          }
+
+          if (['SUPER_ADMIN', 'OFFICE_ADMIN'].includes(role)) {
+            items.push({ href: '/audit', label: 'Audit Logs', icon: Globe2 });
+          }
+
+          return items.map(({ href, label, icon: Icon }) => {
+            const active = (() => {
+              if (href === '/dashboard') return pathname === '/dashboard';
+              if (href === '/contracts/new') return pathname === '/contracts/new';
+              if (href === '/contracts') {
+                return pathname === '/contracts' || (pathname.startsWith('/contracts/') && pathname !== '/contracts/new');
+              }
+              return pathname === href || pathname.startsWith(`${href}/`);
+            })();
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                  active
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+                )}
+              >
+                <Icon className={cn('h-[18px] w-[18px]', active ? 'text-white' : 'text-slate-400 group-hover:text-blue-600')} />
+                <span className="flex-1">{label}</span>
+                {active && <ChevronRight className="h-4 w-4 opacity-80" />}
+              </Link>
+            );
+          });
+        })()}
       </nav>
 
       {/* User */}
@@ -138,7 +164,7 @@ export function AppShell({ children, title, subtitle }: { children: React.ReactN
             <NotificationBell />
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-auto px-6 py-2">{children}</main>
       </div>
     </div>
   );

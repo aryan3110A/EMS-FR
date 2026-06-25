@@ -23,3 +23,17 @@ export const INCOTERM_OPTIONS = [
   { value: 'CIF', label: 'CIF' },
   { value: 'CNF', label: 'CNF' },
 ] as const;
+
+export const CURRENCY_OPTIONS = [
+  { value: 'USD', label: 'USD - US Dollar' },
+  { value: 'EUR', label: 'EUR - Euro' },
+  { value: 'GBP', label: 'GBP - British Pound' },
+  { value: 'JPY', label: 'JPY - Japanese Yen' },
+  { value: 'AUD', label: 'AUD - Australian Dollar' },
+  { value: 'CAD', label: 'CAD - Canadian Dollar' },
+  { value: 'SGD', label: 'SGD - Singapore Dollar' },
+  { value: 'AED', label: 'AED - UAE Dirham' },
+  { value: 'CNY', label: 'CNY - Chinese Yuan' },
+  { value: 'INR', label: 'INR - Indian Rupee' },
+] as const;
+

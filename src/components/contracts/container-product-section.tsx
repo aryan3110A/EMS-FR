@@ -26,6 +26,7 @@ type ContainerProductSectionProps = {
   onVariantCreated: (product: Product, variantName: string) => void;
   createProduct: (name: string) => Promise<Product>;
   createVariant: (productId: string, name: string, processingType?: string) => Promise<Product>;
+  hideBorder?: boolean;
 };
 
 function processingOptionsFor(product: Product | undefined) {
@@ -51,12 +52,13 @@ export function ContainerProductSection({
   onVariantCreated,
   createProduct,
   createVariant,
+  hideBorder,
 }: ContainerProductSectionProps) {
   const selectedProduct = products.find((p) => p.id === data.productId);
   const processingOptions = processingOptionsFor(selectedProduct);
 
   return (
-    <div className={index > 0 ? 'mt-8 border-t border-slate-200 pt-8' : ''}>
+    <div className={index > 0 && !hideBorder ? 'mt-8 border-t border-slate-200 pt-8' : ''}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-bold text-slate-800">Container {index + 1}</h3>
         {showCopyButton && (

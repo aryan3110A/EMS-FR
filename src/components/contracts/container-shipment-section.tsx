@@ -17,6 +17,7 @@ type ContainerShipmentSectionProps = {
   onPatch: (patch: Partial<ContainerProduct>) => void;
   onAddPort?: () => void;
   errors?: Record<string, string>;
+  hideBorder?: boolean;
 };
 
 export function ContainerShipmentSection({
@@ -28,6 +29,7 @@ export function ContainerShipmentSection({
   onPatch,
   onAddPort,
   errors = {},
+  hideBorder,
 }: ContainerShipmentSectionProps) {
   const { month, period } = shipmentPeriodReadOnly(data.expectedShipmentDate);
 
@@ -41,7 +43,7 @@ export function ContainerShipmentSection({
   }
 
   return (
-    <div className={index > 0 ? 'mt-8 border-t border-slate-200 pt-8' : 'mt-4'}>
+    <div className={index > 0 && !hideBorder ? 'mt-8 border-t border-slate-200 pt-8' : 'mt-4'}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-bold text-slate-800">Container {index + 1} — Shipment</h3>
         {showCopyButton && (

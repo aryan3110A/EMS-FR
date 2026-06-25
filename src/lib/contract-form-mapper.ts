@@ -108,14 +108,6 @@ export function buildContainerProductsPayload(
   return containerProducts.map((c, i) => {
     const quantityMt = c.quantityMt ?? totalMt / containerProducts.length;
     const incoterm = c.incoterm ?? 'FOB';
-    const calc = enrichContainerCommercial({
-      incoterm,
-      fobPrice: c.fobPrice,
-      exchangeRate: c.exchangeRate,
-      quantityMt,
-      totalFreight: c.totalFreight,
-      insurance: c.insurance,
-    });
     return {
       containerIndex: i + 1,
       productId: c.productId,
@@ -143,11 +135,7 @@ export function buildContainerProductsPayload(
       exchangeRateSource: c.exchangeRateSource,
       exchangeRateManual: c.exchangeRateManual,
       totalFreight: c.totalFreight,
-      freightPerMt: calc.freightPerMt,
-      fobInrPerKg: calc.fobInrPerKg,
       insurance: c.insurance,
-      cifPrice: calc.cifPrice,
-      cnfPrice: calc.cnfPrice,
       commercialRemarks: c.commercialRemarks,
     };
   });

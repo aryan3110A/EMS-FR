@@ -58,9 +58,9 @@ export default function MastersPage() {
           {buyersLoading && !buyers ? (
             <p className="text-sm text-slate-400">Loading…</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
               <table className="ems-table w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white">
                   <tr>
                     <th>Code</th>
                     <th>Name</th>
@@ -98,9 +98,9 @@ export default function MastersPage() {
 
         <div className="ems-card p-5 xl:col-span-2">
           <h3 className="mb-3 font-semibold">Port Master</h3>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
             <table className="ems-table w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr>
                   <th>Name</th>
                   <th>Code</th>

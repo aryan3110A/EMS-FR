@@ -38,6 +38,7 @@ export function EmsSelect({
   const [pos, setPos] = useState<DropdownPos | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const selected = options.find((o) => o.value === value);
 
@@ -68,7 +69,7 @@ export function EmsSelect({
     const gap = 6;
     const spaceBelow = window.innerHeight - rect.bottom - gap;
     const spaceAbove = rect.top - gap;
-    const preferredMax = searchable ? 320 : 240;
+    const preferredMax = searchable ? 340 : 260;
     const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
     const maxHeight = Math.min(preferredMax, openUp ? spaceAbove : spaceBelow);
 
@@ -94,6 +95,14 @@ export function EmsSelect({
       window.removeEventListener('resize', onScrollOrResize);
     };
   }, [open, updatePosition]);
+
+  // Auto-focus search input when opening
+  useEffect(() => {
+    if (open && searchable) {
+      const t = setTimeout(() => searchRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [open, searchable]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -134,58 +143,66 @@ export function EmsSelect({
             className="ems-select-dropdown ems-select-portal fixed z-[9999]"
             style={{
               left: pos.left,
-              width: pos.width,
+              width: Math.max(pos.width, 200),
               top: pos.openUp ? undefined : pos.top,
               bottom: pos.openUp ? window.innerHeight - pos.top : undefined,
               maxHeight: pos.maxHeight,
             }}
           >
             {searchable && (
-              <div className="border-b border-slate-100 bg-slate-50/80 p-2">
+              <div className="p-2" style={{ borderBottom: '1px solid rgb(241 245 249)' }}>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                   <input
+                    ref={searchRef}
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Type to search..."
-                    className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                    autoFocus
+                    placeholder="Search..."
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-sm outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
               </div>
             )}
             <ul
-              className="overflow-y-auto overscroll-contain p-1.5"
-              style={{ maxHeight: searchable ? pos.maxHeight - 56 : pos.maxHeight - 8 }}
+              className="overflow-y-auto overscroll-contain py-1.5"
+              style={{ maxHeight: searchable ? pos.maxHeight - 58 : pos.maxHeight - 6 }}
             >
-              {filtered.map((opt) => {
+              {filtered.map((opt, idx) => {
                 const isSelected = value === opt.value;
                 const isPlaceholder = !opt.value;
                 const isAddOption = addOptionValue && opt.value === addOptionValue;
                 return (
-                  <li key={opt.value || `opt-${opt.label}`} className={isAddOption ? 'border-b border-slate-100 mb-1 pb-1' : undefined}>
+                  <li key={opt.value || `opt-${opt.label}`}>
+                    {isAddOption && idx > 0 && (
+                      <div className="mx-2 my-1" style={{ borderTop: '1px solid rgb(241 245 249)' }} />
+                    )}
                     <button
                       type="button"
                       onClick={() => selectOption(opt.value)}
                       className={cn(
-                        'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors',
-                        isAddOption && 'font-medium text-blue-700 hover:bg-blue-50',
+                        'flex w-full items-center justify-between gap-2 mx-1 rounded-lg px-3 py-2 text-left text-sm transition-all duration-100',
+                        'w-[calc(100%-8px)]',
+                        isAddOption && 'font-medium text-blue-600 hover:bg-blue-50/80',
                         isSelected && !isPlaceholder && !isAddOption
-                          ? 'bg-blue-600 font-medium text-white shadow-sm'
+                          ? 'bg-blue-600 font-medium text-white'
                           : isSelected && isPlaceholder
-                            ? 'bg-slate-100 font-normal text-slate-500'
-                            : !isAddOption && 'text-slate-700 hover:bg-blue-50 hover:text-blue-800',
+                            ? 'bg-slate-100 text-slate-500'
+                            : !isAddOption && 'text-slate-700 hover:bg-slate-50 hover:text-slate-900',
                       )}
                     >
-                      <span className="truncate">{opt.label}</span>
-                      {isSelected && !isPlaceholder && <Check className="h-4 w-4 shrink-0 opacity-90" />}
+                      <span className="truncate leading-5">{opt.label}</span>
+                      {isSelected && !isPlaceholder && !isAddOption && (
+                        <Check className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                      )}
                     </button>
                   </li>
                 );
               })}
               {filtered.length === 0 && (
-                <li className="px-3 py-6 text-center text-sm text-slate-400">No matching options</li>
+                <li className="px-4 py-8 text-center text-sm text-slate-400">
+                  No matching options
+                </li>
               )}
             </ul>
           </div>,

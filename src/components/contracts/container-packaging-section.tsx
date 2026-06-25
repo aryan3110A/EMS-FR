@@ -13,6 +13,7 @@ type Props = {
   onCopyFromFirst: () => void;
   onPatch: (patch: Partial<ContainerProduct>) => void;
   onAddPackaging?: () => void;
+  hideBorder?: boolean;
 };
 
 export function ContainerPackagingSection({
@@ -23,11 +24,12 @@ export function ContainerPackagingSection({
   onCopyFromFirst,
   onPatch,
   onAddPackaging,
+  hideBorder,
 }: Props) {
   const sizesForType = packaging.find((p) => p.id === data.packagingTypeId)?.sizes ?? packaging.flatMap((p) => p.sizes || []);
 
   return (
-    <div className={index > 0 ? 'mt-8 border-t border-slate-200 pt-8' : ''}>
+    <div className={index > 0 && !hideBorder ? 'mt-8 border-t border-slate-200 pt-8' : ''}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-bold text-slate-800">Container {index + 1} — Packaging</h3>
         {showCopyButton && (

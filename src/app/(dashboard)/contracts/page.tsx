@@ -14,6 +14,16 @@ export default function ContractsPage() {
   const [inputValue, setInputValue] = useState('');
   const [activeSearch, setActiveSearch] = useState('');
   const [fetchMode, setFetchMode] = useState<'search' | 'fetch' | null>(null);
+  const [userRole, setUserRole] = useState<string>('');
+
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('ems_user') || '{}');
+      setUserRole(u.role || '');
+    } catch {}
+  }, []);
+
+  const canCreate = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(userRole);
 
   const { data: buyers } = useCachedQuery('masters:buyers', () => api.masters.buyers());
 
@@ -52,15 +62,17 @@ export default function ContractsPage() {
   };
 
   const loadingMessage =
-    fetchMode === 'fetch' ? 'Fetching details...' : 'Searching contracts...';
+    fetchMode === 'fetch' ? 'Fetching details...' : 'Loading contracts...';
 
   return (
     <AppShell title="Contract Register">
-      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
-        <Link href="/contracts/new" className="ems-btn-primary gap-2">
-          <Plus className="h-4 w-4" /> New Contract
-        </Link>
-      </div>
+      {canCreate && (
+        <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+          <Link href="/contracts/new" className="ems-btn-primary gap-2">
+            <Plus className="h-4 w-4" /> New Contract
+          </Link>
+        </div>
+      )}
 
       <BuyerContractSearch
         value={inputValue}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Bell } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -16,8 +16,11 @@ type Notification = {
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notification[]>([]);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   async function load() {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('ems_token') : null;
+    if (!token) return;
     try {
       const data = await api.notifications();
       setItems(data);
@@ -32,6 +35,19 @@ export function NotificationBell() {
     return () => clearInterval(t);
   }, []);
 
+  // Close popup when clicking anywhere outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
   const unread = items.filter((n) => !n.readAt).length;
 
   async function markRead(id: string) {
@@ -40,10 +56,10 @@ export function NotificationBell() {
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapperRef}>
       <button
         type="button"
-        className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+        className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100 transition-colors"
         onClick={() => setOpen((o) => !o)}
         aria-label="Notifications"
       >
@@ -54,24 +70,49 @@ export function NotificationBell() {
           </span>
         )}
       </button>
+
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg">
-          <div className="border-b border-slate-100 px-4 py-2 font-semibold text-sm">Notifications</div>
+        <div
+          className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-xl"
+          style={{
+            boxShadow: '0 4px 6px -1px rgb(15 23 42 / 0.08), 0 16px 48px -8px rgb(15 23 42 / 0.18)',
+            animation: 'ems-dropdown-in 0.13s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+        >
+          <div className="border-b border-slate-100 px-4 py-3 font-semibold text-sm text-slate-800 flex items-center justify-between">
+            <span>Notifications</span>
+            {unread > 0 && (
+              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-600">
+                {unread} new
+              </span>
+            )}
+          </div>
           <ul className="max-h-72 overflow-y-auto">
             {items.length === 0 && (
-              <li className="px-4 py-6 text-center text-sm text-slate-400">No notifications</li>
+              <li className="px-4 py-8 text-center text-sm text-slate-400">No notifications</li>
             )}
             {items.map((n) => (
-              <li key={n.id} className={`border-b border-slate-50 px-4 py-3 text-sm ${n.readAt ? 'opacity-60' : ''}`}>
-                <p>{n.message}</p>
-                <div className="mt-1 flex gap-2">
+              <li
+                key={n.id}
+                className={`border-b border-slate-50 px-4 py-3 text-sm transition-colors hover:bg-slate-50/60 ${n.readAt ? 'opacity-60' : ''}`}
+              >
+                <p className="text-slate-700 leading-relaxed">{n.message}</p>
+                <div className="mt-1.5 flex gap-3">
                   {n.contractId && (
-                    <Link href={`/contracts/${n.contractId}`} className="text-xs text-blue-600 hover:underline">
+                    <Link
+                      href={`/contracts/${n.contractId}`}
+                      className="text-xs font-medium text-blue-600 hover:underline"
+                      onClick={() => setOpen(false)}
+                    >
                       View contract
                     </Link>
                   )}
                   {!n.readAt && (
-                    <button type="button" className="text-xs text-slate-500 hover:underline" onClick={() => markRead(n.id)}>
+                    <button
+                      type="button"
+                      className="text-xs text-slate-400 hover:text-slate-600 hover:underline"
+                      onClick={() => markRead(n.id)}
+                    >
                       Mark read
                     </button>
                   )}
