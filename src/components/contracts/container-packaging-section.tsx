@@ -82,8 +82,8 @@ export function ContainerPackagingSection({
           <input
             type="number"
             className="ems-input"
-            value={data.packingSizeValue ?? ''}
-            onChange={(e) => onPatch({ packingSizeValue: parseFloat(e.target.value) || undefined })}
+            value={data.packingSizeValue == null || Number.isNaN(data.packingSizeValue) ? '' : data.packingSizeValue}
+            onChange={(e) => onPatch({ packingSizeValue: e.target.value ? parseFloat(e.target.value) : undefined })}
           />
         </Field>
         <Field label="Size Unit">

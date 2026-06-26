@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/sidebar';
@@ -132,6 +132,7 @@ export default function NewContractPage() {
   const [activeContainerIdx, setActiveContainerIdx] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [draftContractId, setDraftContractId] = useState<string | null>(null);
+  const isSavingDraftRef = useRef(false);
   const [refreshingIdx, setRefreshingIdx] = useState<number | null>(null);
   const [containerProducts, setContainerProducts] = useState<ContainerProduct[]>([emptyContainerProduct()]);
   const [newBuyerCountryId, setNewBuyerCountryId] = useState('');
@@ -403,7 +404,7 @@ export default function NewContractPage() {
   }
 
   function goNext() {
-    const { valid, errors } = validateStep(step, form, containerProducts, form.totalMt);
+    const { valid, errors } = validateStep(step, form, containerProducts, form.totalMt, { activeContainerIdx });
     setFieldErrors(errors);
     if (!valid) {
       const firstError = Object.values(errors)[0];
@@ -461,7 +462,8 @@ export default function NewContractPage() {
   const canAutosave = Boolean(form.buyerId && form.officeId && containerProducts[0]?.productId);
 
   const saveDraftPayload = useCallback(async () => {
-    if (!canAutosave) return;
+    if (!canAutosave || isSavingDraftRef.current) return;
+    isSavingDraftRef.current = true;
     const containerPayload = buildContainerProductsPayload(containerProducts, form.totalMt);
     const payload = { ...form, status: 'DRAFT', containerProducts: containerPayload, numberOfContainers: containers };
     try {
@@ -475,6 +477,8 @@ export default function NewContractPage() {
     } catch (e) {
       showError(e, 'Failed to save draft');
       throw e;
+    } finally {
+      isSavingDraftRef.current = false;
     }
   }, [form, containerProducts, containers, draftContractId, canAutosave, pendingMasters]);
 
@@ -1042,6 +1046,24 @@ export default function NewContractPage() {
               />
               ) : null,
             )}
+            <div className="mt-4 flex justify-between">
+              <button
+                type="button"
+                className="ems-btn-secondary gap-1"
+                disabled={activeContainerIdx === 0}
+                onClick={() => setActiveContainerIdx((i) => Math.max(0, i - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous Container
+              </button>
+              <button
+                type="button"
+                className="ems-btn-secondary gap-1"
+                disabled={activeContainerIdx >= containerProducts.length - 1}
+                onClick={() => setActiveContainerIdx((i) => Math.min(containerProducts.length - 1, i + 1))}
+              >
+                Next Container <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -1080,6 +1102,24 @@ export default function NewContractPage() {
               />
               ) : null,
             )}
+            <div className="mt-4 flex justify-between">
+              <button
+                type="button"
+                className="ems-btn-secondary gap-1"
+                disabled={activeContainerIdx === 0}
+                onClick={() => setActiveContainerIdx((i) => Math.max(0, i - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous Container
+              </button>
+              <button
+                type="button"
+                className="ems-btn-secondary gap-1"
+                disabled={activeContainerIdx >= containerProducts.length - 1}
+                onClick={() => setActiveContainerIdx((i) => Math.min(containerProducts.length - 1, i + 1))}
+              >
+                Next Container <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -1118,6 +1158,24 @@ export default function NewContractPage() {
                 />
                 ) : null,
               )}
+              <div className="mt-4 flex justify-between">
+                <button
+                  type="button"
+                  className="ems-btn-secondary gap-1"
+                  disabled={activeContainerIdx === 0}
+                  onClick={() => setActiveContainerIdx((i) => Math.max(0, i - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" /> Previous Container
+                </button>
+                <button
+                  type="button"
+                  className="ems-btn-secondary gap-1"
+                  disabled={activeContainerIdx >= containerProducts.length - 1}
+                  onClick={() => setActiveContainerIdx((i) => Math.min(containerProducts.length - 1, i + 1))}
+                >
+                  Next Container <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
               {addPanel === 'packaging' && (
                 <InlineAddPanel
                   title="Add packaging material"

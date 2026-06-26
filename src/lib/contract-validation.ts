@@ -37,7 +37,7 @@ export function validateStep(
   form: Partial<ContractForm>,
   containerProducts: ContainerProduct[],
   totalMt: number,
-  options?: { requireAll?: boolean },
+  options?: { requireAll?: boolean; activeContainerIdx?: number },
 ): { valid: boolean; errors: FieldErrors } {
   const errors: FieldErrors = {};
   const requireAll = options?.requireAll ?? false;
@@ -62,34 +62,49 @@ export function validateStep(
     if (form.totalMt && !validateContainerQuantities(form.totalMt, mts)) {
       errors.quantityMt = `Total allocated MT (${mts.reduce((a, b) => a + b, 0).toFixed(3)}) must equal contract quantity (${form.totalMt} MT).`;
     }
-    if (requireAll) {
-      containerProducts.forEach((c, i) => {
+    containerProducts.forEach((c, i) => {
+      const isCurrent = options?.activeContainerIdx === i;
+      if (requireAll || isCurrent) {
         if (!c.expectedShipmentDate) errors[`container_${i}_expectedShipmentDate`] = 'Expected shipment date is required.';
         if (!c.destinationPortId) errors[`container_${i}_destinationPortId`] = 'Destination port is required.';
-      });
-    }
-  }
-
-  if (step === 3) {
-    containerProducts.forEach((c, i) => {
-      if (!c.productId) errors[`container_${i}_productId`] = `Container ${i + 1}: product is required.`;
-      if (requireAll && !c.specification) errors[`container_${i}_specification`] = 'Specification is required.';
-    });
-  }
-
-  if (step === 4 && requireAll) {
-    containerProducts.forEach((c, i) => {
-      if (!c.fobPrice || c.fobPrice <= 0) errors[`container_${i}_fobPrice`] = 'FOB price is required.';
-      if (!c.exchangeRate || c.exchangeRate <= 0) errors[`container_${i}_exchangeRate`] = 'Exchange rate is required.';
-      const term = (c.incoterm ?? 'FOB').toUpperCase();
-      if (term !== 'FOB' && (c.totalFreight == null || c.totalFreight < 0)) {
-        errors[`container_${i}_totalFreight`] = 'Total freight cannot be negative.';
       }
     });
   }
 
-  if (step === 5 && requireAll) {
-    if (!form.paymentType) errors.paymentType = 'Payment type is required.';
+  if (step === 3) {
+    containerProducts.forEach((c, i) => {
+      const isCurrent = options?.activeContainerIdx === i;
+      if (requireAll || isCurrent) {
+        if (!c.productId) errors[`container_${i}_productId`] = `Container ${i + 1}: product is required.`;
+        if (!c.specification) errors[`container_${i}_specification`] = `Container ${i + 1}: specification is required.`;
+      }
+    });
+  }
+
+  if (step === 4) {
+    containerProducts.forEach((c, i) => {
+      const isCurrent = options?.activeContainerIdx === i;
+      if (requireAll || isCurrent) {
+        if (!c.fobPrice || c.fobPrice <= 0) errors[`container_${i}_fobPrice`] = 'FOB price is required.';
+        if (!c.exchangeRate || c.exchangeRate <= 0) errors[`container_${i}_exchangeRate`] = 'Exchange rate is required.';
+        const term = (c.incoterm ?? 'FOB').toUpperCase();
+        if (term !== 'FOB' && (c.totalFreight == null || c.totalFreight < 0)) {
+          errors[`container_${i}_totalFreight`] = 'Total freight cannot be negative.';
+        }
+      }
+    });
+  }
+
+  if (step === 5) {
+    if (requireAll && !form.paymentType) errors.paymentType = 'Payment type is required.';
+    containerProducts.forEach((c, i) => {
+      const isCurrent = options?.activeContainerIdx === i;
+      if (requireAll || isCurrent) {
+        if (!c.packagingTypeId && !c.packingDescription) {
+          errors[`container_${i}_packaging`] = 'Packaging type or description is required.';
+        }
+      }
+    });
   }
 
   return { valid: Object.keys(errors).length === 0, errors };

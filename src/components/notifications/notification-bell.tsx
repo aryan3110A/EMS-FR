@@ -31,8 +31,57 @@ export function NotificationBell() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('ems_token') : null;
+    let eventSource: EventSource | null = null;
+    let fallbackInterval: NodeJS.Timeout | null = null;
+
+    if (token) {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+      const sseUrl = `${apiBase}/notifications/sse?token=${token}`;
+      eventSource = new EventSource(sseUrl);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const newNotification = JSON.parse(event.data);
+          setItems((prev) => {
+            // Avoid duplicate additions
+            if (prev.some((n) => n.id === newNotification.id)) return prev;
+            return [newNotification, ...prev];
+          });
+        } catch (e) {
+          console.error('Failed to parse SSE notification data:', e);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        console.warn('SSE connection failed, falling back to background polling...', err);
+        if (eventSource) {
+          eventSource.close();
+        }
+        // Fall back to polling every 5 minutes
+        if (!fallbackInterval) {
+          fallbackInterval = setInterval(load, 5 * 60 * 1000);
+        }
+      };
+    } else {
+      // If token isn't available, poll every 5 minutes
+      fallbackInterval = setInterval(load, 5 * 60 * 1000);
+    }
+
+    // Refresh immediately when the user returns to/focuses the browser tab
+    const handleFocus = () => load();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+      }
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   // Close popup when clicking anywhere outside

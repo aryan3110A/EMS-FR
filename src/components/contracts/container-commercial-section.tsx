@@ -99,7 +99,7 @@ export function ContainerCommercialSection({
           <input
             className="ems-input"
             type="number"
-            value={container.fobPrice ?? ''}
+            value={container.fobPrice == null || Number.isNaN(container.fobPrice) ? '' : container.fobPrice}
             disabled={readOnly}
             onChange={(e) => onChange({ fobPrice: e.target.value ? Number(e.target.value) : undefined })}
           />
@@ -119,7 +119,7 @@ export function ContainerCommercialSection({
             <input
               className="ems-input"
               type="number"
-              value={container.exchangeRate ?? ''}
+              value={container.exchangeRate == null || Number.isNaN(container.exchangeRate) ? '' : container.exchangeRate}
               disabled={readOnly}
               onChange={(e) => onChange({ exchangeRate: e.target.value ? Number(e.target.value) : undefined, exchangeRateSource: 'MANUAL' })}
             />
@@ -150,7 +150,7 @@ export function ContainerCommercialSection({
             <input
               className="ems-input"
               type="number"
-              value={container.totalFreight ?? ''}
+              value={container.totalFreight == null || Number.isNaN(container.totalFreight) ? '' : container.totalFreight}
               disabled={readOnly}
               onChange={(e) => onChange({ totalFreight: e.target.value ? Number(e.target.value) : undefined })}
             />
@@ -168,7 +168,7 @@ export function ContainerCommercialSection({
             <input
               className="ems-input"
               type="number"
-              value={container.insurance ?? ''}
+              value={container.insurance == null || Number.isNaN(container.insurance) ? '' : container.insurance}
               disabled={readOnly}
               onChange={(e) => onChange({ insurance: e.target.value ? Number(e.target.value) : undefined })}
             />
