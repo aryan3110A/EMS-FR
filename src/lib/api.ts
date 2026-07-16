@@ -93,6 +93,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  updateContainerStatus: (
+    contractId: string,
+    containerId: string,
+    data: { status: string; remarks?: string },
+  ) =>
+    request<Contract>(`/contracts/${contractId}/containers/${containerId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   contractAudit: (id: string) => request<unknown[]>(`/contracts/${id}/audit`),
   allAudits: () => request<any[]>('/contracts/audit/all'),
   notifications: () =>
@@ -143,13 +152,23 @@ export const api = {
       request<Product>('/masters/products', { method: 'POST', body: JSON.stringify(data) }),
     createProductVariant: (data: { productId: string; name: string; processingType?: string }) =>
       request<Product>('/masters/product-variants', { method: 'POST', body: JSON.stringify(data) }),
-    createPackagingType: (data: { name: string; material?: string }) =>
+    createPackagingType: (data: { name: string; material?: string; code?: string; description?: string }) =>
       request<PackagingType>('/masters/packaging', { method: 'POST', body: JSON.stringify(data) }),
-    createPackagingSize: (data: { packagingTypeId: string; weightValue: number; weightUnit?: string }) =>
+    createPackagingSize: (data: {
+      packagingTypeId: string;
+      weightValue: number;
+      weightUnit?: string;
+      label?: string;
+      description?: string;
+    }) =>
       request<{ id: string; label: string; weightKg: number; weightUnit?: string }>('/masters/packaging/sizes', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    users: (role?: string) => {
+      const q = role ? `?role=${encodeURIComponent(role)}` : '';
+      return request<{ id: string; name: string; email: string; role: string }[]>(`/masters/users${q}`);
+    },
   },
 };
 
@@ -201,7 +220,17 @@ export interface PackagingType {
   id: string;
   code: string;
   name: string;
-  sizes?: { id: string; label: string; weightKg: number; weightUnit?: string }[];
+  material?: string;
+  description?: string;
+  isActive?: boolean;
+  sizes?: {
+    id: string;
+    label: string;
+    weightKg: number;
+    weightUnit?: string;
+    description?: string;
+    isActive?: boolean;
+  }[];
 }
 
 export interface Port {
@@ -220,17 +249,36 @@ export interface Country {
   euClassification: string;
 }
 
+export interface ContainerProductLine {
+  productIndex?: number;
+  productId: string;
+  productVariantId?: string;
+  processingType?: string;
+  specification?: string;
+  quantityMt: number;
+  packagingTypeId?: string;
+  packagingSizeId?: string;
+  packingDescription?: string;
+  packingSizeValue?: number;
+  packingSizeUnit?: string;
+  productRemarks?: string;
+}
+
 export interface ContainerProduct {
   productId: string;
   productVariantId?: string;
   processingType?: string;
   specification?: string;
   productRemarks?: string;
+  /** Multi-product rows inside this container */
+  products?: ContainerProductLine[];
   destinationPortId?: string;
   shipmentMonthYear?: string;
   shipmentHalf?: 'FIRST_HALF' | 'SECOND_HALF';
   expectedShipmentDate?: string;
   containerNo?: string;
+  factorySealNo?: string;
+  shippingLineSealNo?: string;
   quantityMt?: number;
   packagingTypeId?: string;
   packagingSizeId?: string;
@@ -251,11 +299,21 @@ export interface ContainerProduct {
   cifPrice?: number;
   cnfPrice?: number;
   commercialRemarks?: string;
+  invoiceNumber?: string;
+  invoiceAmount?: number;
+  invoiceDate?: string;
+  paymentReceived?: boolean;
+  paymentStatus?: string;
+  receivedAmount?: number;
+  remainingAmount?: number;
+  paymentRemarks?: string;
+  containerStatus?: string;
 }
 
 export interface Contract {
   id: string;
   contractNumber: string;
+  createdAt?: string;
   receivedDate?: string;
   contractDate?: string;
   signedContractReceivedDate?: string;
@@ -273,6 +331,7 @@ export interface Contract {
   paymentType?: string;
   advancePercentage?: number;
   balancePaymentStage?: string;
+  otherPaymentMethod?: string;
   shipmentMonth?: string;
   shipmentHalf?: string;
   status: string;
@@ -301,6 +360,8 @@ export interface Contract {
   remarks?: string;
   office?: Office;
   salesperson?: Salesperson;
+  salesAttributions?: { salespersonId: string; salesperson?: Salesperson; contributionPct?: number }[];
+  createdBy?: { id: string; name: string; email?: string; role?: string };
   buyer?: Buyer;
   product?: Product;
   productVariant?: { name: string };
@@ -320,6 +381,8 @@ export interface ContractContainer {
   productRemarks?: string;
   quantityMt?: number;
   containerNo?: string;
+  factorySealNo?: string;
+  shippingLineSealNo?: string;
   destinationPortId?: string;
   expectedShipmentDate?: string;
   shipmentMonth?: string;
@@ -340,6 +403,14 @@ export interface ContractContainer {
   originalCifCnfPrice?: number;
   currentCifCnfPrice?: number;
   commercialRemarks?: string;
+  invoiceNumber?: string;
+  invoiceAmount?: number;
+  invoiceDate?: string;
+  paymentReceived?: boolean;
+  paymentStatus?: string;
+  receivedAmount?: number;
+  remainingAmount?: number;
+  paymentRemarks?: string;
   containerStatus?: string;
   packagingTypeId?: string;
   packagingSizeId?: string;
@@ -351,6 +422,22 @@ export interface ContractContainer {
   product?: Product;
   productVariant?: { id?: string; name: string };
   destinationPort?: Port;
+  products?: {
+    id: string;
+    productIndex: number;
+    productId: string;
+    quantityMt: number;
+    processingType?: string;
+    specification?: string;
+    productRemarks?: string;
+    packagingTypeId?: string;
+    packagingSizeId?: string;
+    packingDescription?: string;
+    product?: Product;
+    productVariant?: { id?: string; name: string };
+    packagingType?: { name: string };
+    packagingSize?: { label: string };
+  }[];
   amendments?: {
     id: string;
     incoterm: string;
@@ -360,6 +447,13 @@ export interface ContractContainer {
     reason: string;
     amendmentDate: string;
     amendedBy?: { name: string };
+  }[];
+  statusHistory?: {
+    fromStatus?: string;
+    toStatus: string;
+    remarks?: string;
+    createdAt: string;
+    updatedBy?: { id: string; name: string };
   }[];
 }
 
@@ -372,6 +466,7 @@ export interface ContractForm {
   contractDate?: string;
   signedContractReceivedDate?: string;
   salespersonId?: string;
+  salespersonIds?: string[];
   contractOnBehalfOf?: string;
   invoiceNumber?: string;
   remarks?: string;
@@ -432,6 +527,7 @@ export interface ContractForm {
   advancePercentage?: number;
   balancePaymentMode?: string;
   balancePaymentStage?: string;
+  otherPaymentMethod?: string;
   destinationPortId?: string;
   expectedShipmentDate?: string;
   containerNo?: string;
@@ -519,4 +615,30 @@ export interface DashboardStats {
     }[];
   };
   allContainers?: any[];
+  scopedToSuperSales?: boolean;
+  salespersonBreakdown?: {
+    salespersonId: string;
+    name: string;
+    code?: string;
+    contracts: number;
+    totalMt: number;
+    containers: number;
+  }[];
+  payment?: {
+    totalInvoiceAmount: number;
+    totalReceived: number;
+    totalRemaining: number;
+    byStatus: { status: string; count: number; remaining: number; invoiceAmount: number }[];
+    remainingInvoices: {
+      invoiceNumber?: string;
+      contractId: string;
+      contractNumber: string;
+      containerIndex: number;
+      buyer?: string;
+      invoiceAmount?: number;
+      receivedAmount?: number;
+      remainingAmount?: number;
+      paymentStatus?: string;
+    }[];
+  };
 }

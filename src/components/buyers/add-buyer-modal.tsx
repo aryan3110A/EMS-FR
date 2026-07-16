@@ -6,6 +6,8 @@ import { api, Buyer, Country, Port } from '@/lib/api';
 import { showError, showSuccess } from '@/lib/toast';
 import { Field } from '@/components/contracts/form-fields';
 import { EmsSelect } from '@/components/ui/ems-select';
+import { AddPortModal } from '@/components/ports/add-port-modal';
+import { ADD_OPTION_VALUE } from '@/lib/form-constants';
 
 type Props = {
   open: boolean;
@@ -14,10 +16,13 @@ type Props = {
   officeId?: string;
   onClose: () => void;
   onSaved: (buyer: Buyer) => void;
+  onPortCreated?: (port: Port) => void;
 };
 
-export function AddBuyerModal({ open, countries, ports, officeId, onClose, onSaved }: Props) {
+export function AddBuyerModal({ open, countries, ports, officeId, onClose, onSaved, onPortCreated }: Props) {
   const [saving, setSaving] = useState(false);
+  const [showPortModal, setShowPortModal] = useState(false);
+  const [localPorts, setLocalPorts] = useState<Port[]>([]);
   const [form, setForm] = useState({
     name: '',
     code: '',
@@ -33,6 +38,7 @@ export function AddBuyerModal({ open, countries, ports, officeId, onClose, onSav
 
   if (!open) return null;
 
+  const allPorts = [...ports, ...localPorts.filter((p) => !ports.some((x) => x.id === p.id))];
   const country = countries.find((c) => c.id === form.countryId);
 
   async function handleSave() {
@@ -63,7 +69,7 @@ export function AddBuyerModal({ open, countries, ports, officeId, onClose, onSav
       onSaved({
         ...updated,
         country: selectedCountry,
-        defaultPort: updated.defaultPort ?? ports.find((p) => p.id === form.defaultPortId),
+        defaultPort: updated.defaultPort ?? allPorts.find((p) => p.id === form.defaultPortId),
       });
       showSuccess('Buyer saved and selected');
       onClose();
@@ -90,52 +96,66 @@ export function AddBuyerModal({ open, countries, ports, officeId, onClose, onSav
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <div className="space-y-3">
-          <Field label="Buyer Name *">
-            <input className="ems-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </Field>
-          <Field label="Buyer Code *">
-            <input className="ems-input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
-            <p className="mt-1 text-xs text-slate-500">
-              Buyer Code is a unique identifier assigned to each buyer. It can be added while creating the buyer and updated later from Buyer Master.
-            </p>
-          </Field>
-          <Field label="Country *">
-            <EmsSelect
-              value={form.countryId}
-              onChange={(v) => {
-                const c = countries.find((x) => x.id === v);
-                setForm({ ...form, countryId: v, euClassification: c?.euClassification ?? '' });
-              }}
-              options={countries.map((c) => ({ value: c.id, label: c.name }))}
-              placeholder="Select country"
-            />
-          </Field>
-          <Field label="EU / Non-EU">
-            <input className="ems-input" value={form.euClassification} onChange={(e) => setForm({ ...form, euClassification: e.target.value })} />
-          </Field>
-          <Field label="Default Destination Port">
-            <EmsSelect
-              value={form.defaultPortId}
-              onChange={(v) => setForm({ ...form, defaultPortId: v })}
-              options={ports.map((p) => ({ value: p.id, label: p.name }))}
-              placeholder="Select port"
-            />
-          </Field>
-          <Field label="Buyer Address">
-            <textarea className="ems-input" rows={2} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-          </Field>
-          <Field label="Contact Person">
-            <input className="ems-input" value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} />
-          </Field>
-          <Field label="Buyer Email">
-            <input className="ems-input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </Field>
-          <Field label="Buyer Phone">
-            <input className="ems-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          </Field>
-          <Field label="Buyer Remarks">
-            <textarea className="ems-input" rows={2} value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
-          </Field>
+            <Field label="Buyer Name *">
+              <input className="ems-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </Field>
+            <Field label="Buyer Code *">
+              <input className="ems-input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+              <p className="mt-1 text-xs text-slate-500">
+                Buyer Code is a unique identifier assigned to each buyer. It can be added while creating the buyer and updated later from Buyer Master.
+              </p>
+            </Field>
+            <Field label="Country *">
+              <EmsSelect
+                searchable
+                value={form.countryId}
+                onChange={(v) => {
+                  const c = countries.find((x) => x.id === v);
+                  setForm({ ...form, countryId: v, euClassification: c?.euClassification ?? '' });
+                }}
+                options={countries.map((c) => ({ value: c.id, label: c.name }))}
+                placeholder="Select country"
+              />
+            </Field>
+            <Field label="EU / Non-EU">
+              <input className="ems-input" value={form.euClassification} onChange={(e) => setForm({ ...form, euClassification: e.target.value })} />
+            </Field>
+            <Field label="Default Destination Port">
+              <EmsSelect
+                searchable
+                value={form.defaultPortId}
+                onChange={(v) => {
+                  if (v === ADD_OPTION_VALUE) {
+                    setShowPortModal(true);
+                    return;
+                  }
+                  setForm({ ...form, defaultPortId: v });
+                }}
+                addOptionValue={ADD_OPTION_VALUE}
+                onAddSelect={() => setShowPortModal(true)}
+                options={[
+                  { value: '', label: 'Select port' },
+                  ...allPorts.map((p) => ({ value: p.id, label: p.name })),
+                  { value: ADD_OPTION_VALUE, label: '+ Add New Port' },
+                ]}
+                placeholder="Select port"
+              />
+            </Field>
+            <Field label="Buyer Address">
+              <textarea className="ems-input" rows={2} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </Field>
+            <Field label="Contact Person">
+              <input className="ems-input" value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} />
+            </Field>
+            <Field label="Buyer Email">
+              <input className="ems-input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </Field>
+            <Field label="Buyer Phone">
+              <input className="ems-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            </Field>
+            <Field label="Buyer Remarks">
+              <textarea className="ems-input" rows={2} value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
+            </Field>
           </div>
         </div>
         <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-6 py-4">
@@ -145,6 +165,19 @@ export function AddBuyerModal({ open, countries, ports, officeId, onClose, onSav
           </button>
         </div>
       </div>
+
+      <AddPortModal
+        open={showPortModal}
+        countries={countries}
+        onClose={() => setShowPortModal(false)}
+        onSaved={(port) => {
+          setLocalPorts((prev) => [...prev, port]);
+          setForm((f) => ({ ...f, defaultPortId: port.id }));
+          onPortCreated?.(port);
+          setShowPortModal(false);
+          showSuccess('Port saved and selected for buyer');
+        }}
+      />
     </div>
   );
 }

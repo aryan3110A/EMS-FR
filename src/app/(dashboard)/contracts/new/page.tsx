@@ -42,7 +42,7 @@ import {
   type PendingMasters,
 } from '@/lib/pending-masters';
 import { invalidateQueryCache } from '@/lib/use-cached-query';
-import { showError, showInfo } from '@/lib/toast';
+import { showError, showInfo, showSuccess } from '@/lib/toast';
 import { ADD_OPTION_VALUE, BALANCE_PAYMENT_METHODS, PACKING_SIZE_UNITS } from '@/lib/form-constants';
 import {
   formatShipmentMonthDb,
@@ -59,11 +59,14 @@ function emptyContainerProduct(): ContainerProduct {
     processingType: '',
     specification: '',
     productRemarks: '',
+    products: [{ productIndex: 1, productId: '', quantityMt: 0 }],
     destinationPortId: '',
     shipmentMonthYear: '',
     shipmentHalf: undefined,
     expectedShipmentDate: '',
     containerNo: '',
+    factorySealNo: '',
+    shippingLineSealNo: '',
   };
 }
 
@@ -132,6 +135,7 @@ export default function NewContractPage() {
   const [activeContainerIdx, setActiveContainerIdx] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [draftContractId, setDraftContractId] = useState<string | null>(null);
+  const draftContractIdRef = useRef<string | null>(null);
   const isSavingDraftRef = useRef(false);
   const [refreshingIdx, setRefreshingIdx] = useState<number | null>(null);
   const [containerProducts, setContainerProducts] = useState<ContainerProduct[]>([emptyContainerProduct()]);
@@ -242,18 +246,35 @@ export default function NewContractPage() {
       const source = prev[targetIndex - 1];
       const keep = prev[targetIndex];
       const next = [...prev];
+      const copiedProducts = (source.products?.length ? source.products : [
+        {
+          productIndex: 1,
+          productId: source.productId,
+          productVariantId: source.productVariantId,
+          processingType: source.processingType,
+          specification: source.specification,
+          quantityMt: keep.quantityMt ?? source.quantityMt ?? 0,
+          packagingTypeId: source.packagingTypeId,
+          packagingSizeId: source.packagingSizeId,
+          packingDescription: source.packingDescription,
+          productRemarks: source.productRemarks,
+        },
+      ]).map((p, i) => ({
+        ...p,
+        productIndex: i + 1,
+        quantityMt: i === 0 ? (keep.quantityMt ?? p.quantityMt) : p.quantityMt,
+      }));
       next[targetIndex] = {
         ...keep,
-        productId: source.productId,
-        productVariantId: source.productVariantId,
-        processingType: source.processingType,
-        specification: source.specification,
-        productRemarks: source.productRemarks,
-        packagingTypeId: source.packagingTypeId,
-        packagingSizeId: source.packagingSizeId,
-        packingDescription: source.packingDescription,
-        packingSizeValue: source.packingSizeValue,
-        packingSizeUnit: source.packingSizeUnit,
+        products: copiedProducts,
+        productId: copiedProducts[0]?.productId || '',
+        productVariantId: copiedProducts[0]?.productVariantId,
+        processingType: copiedProducts[0]?.processingType,
+        specification: copiedProducts[0]?.specification,
+        productRemarks: copiedProducts[0]?.productRemarks,
+        packagingTypeId: copiedProducts[0]?.packagingTypeId || source.packagingTypeId,
+        packagingSizeId: copiedProducts[0]?.packagingSizeId || source.packagingSizeId,
+        packingDescription: copiedProducts[0]?.packingDescription || source.packingDescription,
         destinationPortId: source.destinationPortId,
         incoterm: source.incoterm,
         fobCurrency: source.fobCurrency,
@@ -467,10 +488,12 @@ export default function NewContractPage() {
     const containerPayload = buildContainerProductsPayload(containerProducts, form.totalMt);
     const payload = { ...form, status: 'DRAFT', containerProducts: containerPayload, numberOfContainers: containers };
     try {
-      if (draftContractId) {
-        await api.updateContract(draftContractId, payload);
+      const existingId = draftContractIdRef.current;
+      if (existingId) {
+        await api.updateContract(existingId, payload);
       } else {
         const created = await api.submitContract({ contract: payload, pendingMasters });
+        draftContractIdRef.current = created.id;
         setDraftContractId(created.id);
       }
       invalidateQueryCache('contracts');
@@ -480,7 +503,7 @@ export default function NewContractPage() {
     } finally {
       isSavingDraftRef.current = false;
     }
-  }, [form, containerProducts, containers, draftContractId, canAutosave, pendingMasters]);
+  }, [form, containerProducts, containers, canAutosave, pendingMasters]);
 
   const { status: autosaveStatus } = useAutosave(
     { form, containerProducts },
@@ -555,7 +578,6 @@ export default function NewContractPage() {
         shipmentYear: primary.shipmentMonthYear ? Number(primary.shipmentMonthYear.split('-')[0]) : undefined,
         packingDescription: containerProducts[0]?.packingDescription ?? buildPackingDescription(),
         cifPrice: primary.cifPrice ?? (form.cifManualOverride ? form.cifPrice : undefined),
-        fobInrPerKg: primary.fobInrPerKg,
         originalContractPrice: form.originalContractPrice ?? primary.fobPrice ?? form.fobPrice,
       };
 
@@ -571,11 +593,17 @@ export default function NewContractPage() {
           }
         : undefined;
 
-      const created = await api.submitContract({
-        contract: contractPayload,
-        pendingMasters: hasPendingMasters(pendingMasters) ? pendingMasters : undefined,
-        buyerUpdate,
-      });
+      const created = draftContractIdRef.current
+        ? await api.updateContract(draftContractIdRef.current, contractPayload)
+        : await api.submitContract({
+            contract: contractPayload,
+            pendingMasters: hasPendingMasters(pendingMasters) ? pendingMasters : undefined,
+            buyerUpdate,
+          });
+      if (!draftContractIdRef.current) {
+        draftContractIdRef.current = created.id;
+        setDraftContractId(created.id);
+      }
       invalidateQueryCache('dashboard');
       invalidateQueryCache('contracts');
       invalidateQueryCache('masters:offices');
@@ -584,6 +612,13 @@ export default function NewContractPage() {
       invalidateQueryCache('masters:products');
       invalidateQueryCache('masters:packaging');
       invalidateQueryCache('masters:countries');
+      if (finalStatus === 'DRAFT') {
+        showSuccess(`Draft saved. Contract Number: ${created.contractNumber}`);
+      } else {
+        showSuccess(
+          `Contract submitted successfully.\nContract Number: ${created.contractNumber}\nThe contract has been saved and the respective departments have been notified.\nTotal Containers Created: ${created.numberOfContainers ?? containers}\nProduction Unit Assignment: Pending`,
+        );
+      }
       const successQuery = finalStatus === 'DRAFT' ? 'draft=1' : 'created=1';
       router.push(`/contracts/${created.id}?${successQuery}`);
     } catch (e) {
@@ -604,7 +639,7 @@ export default function NewContractPage() {
     );
   }
 
-  if (!['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(userRole)) {
+  if (!['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'SUPER_SALES'].includes(userRole)) {
     return (
       <AppShell title="Access Denied">
         <div className="ems-card p-5 text-center text-red-500 font-semibold flex flex-col items-center justify-center gap-3">
@@ -658,20 +693,39 @@ export default function NewContractPage() {
                   />
                 )}
               </Field>
-              <Field label="Salesperson">
-                <EmsSelect
-                  searchable
-                  value={form.salespersonId || ''}
-                  onChange={(v) => setField('salespersonId', v)}
-                  placeholder="Select salesperson"
-                  addOptionValue={ADD_OPTION_VALUE}
-                  onAddSelect={() => setAddPanel('salesperson')}
-                  options={[
-                    { value: '', label: 'Select salesperson' },
-                    ...mergedSalespersons.map((s) => ({ value: s.id, label: s.name })),
-                    { value: ADD_OPTION_VALUE, label: '+ Add Salesperson...' },
-                  ]}
-                />
+              <Field label="Salesperson Responsible" className="sm:col-span-2">
+                <p className="mb-2 text-xs text-slate-500">
+                  Select one or more salespeople credited for bringing this contract (separate from Created By).
+                </p>
+                <div className="max-h-40 space-y-2 overflow-y-auto rounded-lg border border-slate-200 p-3">
+                  {mergedSalespersons.map((s) => {
+                    const selected = (form.salespersonIds || []).includes(s.id) || form.salespersonId === s.id;
+                    return (
+                      <label key={s.id} className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300"
+                          checked={!!selected}
+                          onChange={(e) => {
+                            const current = new Set(form.salespersonIds?.length ? form.salespersonIds : form.salespersonId ? [form.salespersonId] : []);
+                            if (e.target.checked) current.add(s.id);
+                            else current.delete(s.id);
+                            const ids = [...current];
+                            setForm((f) => ({ ...f, salespersonIds: ids, salespersonId: ids[0] || '' }));
+                          }}
+                        />
+                        {s.name}
+                      </label>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  className="mt-2 text-sm font-medium text-blue-600 hover:underline"
+                  onClick={() => setAddPanel('salesperson')}
+                >
+                  + Add Salesperson...
+                </button>
                 {addPanel === 'salesperson' && (
                   <InlineAddPanel
                     title="Add salesperson"
@@ -680,7 +734,10 @@ export default function NewContractPage() {
                     onSave={async (values) => {
                       const { pending, sp } = addPendingSalesperson(pendingMasters, values.name);
                       setPendingMasters(pending);
-                      setField('salespersonId', sp.id);
+                      setForm((f) => {
+                        const ids = [...(f.salespersonIds || []), sp.id];
+                        return { ...f, salespersonIds: ids, salespersonId: ids[0] };
+                      });
                       setAddPanel(null);
                     }}
                   />
@@ -1043,6 +1100,7 @@ export default function NewContractPage() {
                   }
                 }}
                 hideBorder={true}
+                errors={fieldErrors}
               />
               ) : null,
             )}
@@ -1202,7 +1260,19 @@ export default function NewContractPage() {
                   { value: 'OTHERS', label: 'Others' },
                 ]}
               />
+              <FieldError message={fieldErrors.paymentType} />
             </Field>
+            {(form.paymentType === 'OTHERS' || form.balancePaymentMode === 'OTHERS') && (
+              <Field label="Specify Other Payment Method *" className="sm:col-span-2">
+                <input
+                  className="ems-input"
+                  value={form.otherPaymentMethod || ''}
+                  onChange={(e) => setField('otherPaymentMethod', e.target.value)}
+                  placeholder="e.g. Bank Transfer after document approval"
+                />
+                <FieldError message={fieldErrors.otherPaymentMethod} />
+              </Field>
+            )}
             {form.paymentType === 'ADVANCE' && (
               <>
                 <Field label="Advance %">
@@ -1219,7 +1289,7 @@ export default function NewContractPage() {
                     ]}
                   />
                 </Field>
-                {form.balancePaymentMode === 'OTHERS' && (
+                {form.balancePaymentMode === 'OTHERS' && !form.otherPaymentMethod && (
                   <Field label="Other payment method" className="sm:col-span-2">
                     <input
                       className="ems-input"
@@ -1408,6 +1478,9 @@ export default function NewContractPage() {
           setMasters((m) => ({ ...m, buyers: [...m.buyers.filter((b) => b.id !== buyer.id), buyer] }));
           applyBuyerToForm(buyer, buyer.id);
           setShowBuyerModal(false);
+        }}
+        onPortCreated={(port) => {
+          setMasters((m) => ({ ...m, ports: [...m.ports.filter((p) => p.id !== port.id), port] }));
         }}
       />
       <AddPortModal

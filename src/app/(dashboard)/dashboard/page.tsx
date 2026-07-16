@@ -67,17 +67,23 @@ export default function DashboardPage() {
   const [containerStatus, setContainerStatus] = useState<string>('');
   const [shipmentPeriod, setShipmentPeriod] = useState<string>('');
   const [euClassification, setEuClassification] = useState<string>('');
+  const [salespersonId, setSalespersonId] = useState<string>('');
+  const [superSalesUserId, setSuperSalesUserId] = useState<string>('');
+  const [paymentStatus, setPaymentStatus] = useState<string>('');
 
   // Dropdown list states loaded from API
   const [products, setProducts] = useState<any[]>([]);
   const [buyers, setBuyers] = useState<any[]>([]);
   const [ports, setPorts] = useState<any[]>([]);
+  const [salespersons, setSalespersons] = useState<any[]>([]);
+  const [superSalesUsers, setSuperSalesUsers] = useState<any[]>([]);
 
   // Selected product state for insights panel
   const [selectedProductCode, setSelectedProductCode] = useState<string | null>(null);
 
   // Drilldown Modal State
   const [drilldownProduct, setDrilldownProduct] = useState<any | null>(null);
+  const [paymentDrilldown, setPaymentDrilldown] = useState(false);
   const [drilldownType, setDrilldownType] = useState<'upcoming' | 'shipped'>('upcoming');
 
   // Stats Data
@@ -96,6 +102,9 @@ export default function DashboardPage() {
       containerStatus,
       shipmentPeriod,
       euClassification,
+      salespersonId,
+      superSalesUserId,
+      paymentStatus,
     };
 
     const today = new Date();
@@ -131,6 +140,9 @@ export default function DashboardPage() {
     containerStatus,
     shipmentPeriod,
     euClassification,
+    salespersonId,
+    superSalesUserId,
+    paymentStatus,
   ]);
 
   // Load Dropdowns
@@ -139,10 +151,14 @@ export default function DashboardPage() {
       api.masters.products().catch(() => []),
       api.masters.buyers().catch(() => []),
       api.masters.ports().catch(() => []),
-    ]).then(([prodList, buyerList, portList]) => {
+      api.masters.salespersons().catch(() => []),
+      api.masters.users('SUPER_SALES').catch(() => []),
+    ]).then(([prodList, buyerList, portList, spList, ssList]) => {
       setProducts(prodList);
       setBuyers(buyerList);
       setPorts(portList);
+      setSalespersons(spList);
+      setSuperSalesUsers(ssList);
     });
   }, []);
 
@@ -383,12 +399,64 @@ export default function DashboardPage() {
             onChange={(v) => setContainerStatus(v)}
             options={[
               { value: '', label: 'All Container Statuses' },
-              { value: 'PLANNED', label: 'Planned' },
-              { value: 'IN_PRODUCTION', label: 'In Production' },
-              { value: 'READY', label: 'Ready' },
+              { value: 'DRAFT', label: 'Draft' },
+              { value: 'UNDER_PREPARATION', label: 'Under Preparation' },
+              { value: 'READY_FOR_DISPATCH', label: 'Ready for Dispatch' },
+              { value: 'DISPATCHED_FROM_FACTORY', label: 'Dispatched from Factory' },
               { value: 'REACHED_PORT', label: 'Reached Port' },
               { value: 'SHIPPED', label: 'Shipped' },
-              { value: 'DISPATCHED', label: 'Dispatched' },
+              { value: 'COMPLETED', label: 'Completed' },
+              { value: 'ON_HOLD', label: 'On Hold' },
+              { value: 'CANCELLED', label: 'Cancelled' },
+              { value: 'PLANNED', label: 'Planned (legacy)' },
+            ]}
+            className="mt-1"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-slate-500">Salesperson Responsible</label>
+          <EmsSelect
+            value={salespersonId}
+            onChange={(v) => setSalespersonId(v)}
+            options={[
+              { value: '', label: 'All Salespersons' },
+              ...salespersons.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+            searchable
+            className="mt-1"
+          />
+        </div>
+
+        {user.role !== 'SUPER_SALES' && (
+          <div>
+            <label className="text-xs font-semibold text-slate-500">Super Sales</label>
+            <EmsSelect
+              value={superSalesUserId}
+              onChange={(v) => setSuperSalesUserId(v)}
+              options={[
+                { value: '', label: 'All Super Sales' },
+                ...superSalesUsers.map((u) => ({ value: u.id, label: u.name })),
+              ]}
+              searchable
+              className="mt-1"
+            />
+          </div>
+        )}
+
+        <div>
+          <label className="text-xs font-semibold text-slate-500">Payment Status</label>
+          <EmsSelect
+            value={paymentStatus}
+            onChange={(v) => setPaymentStatus(v)}
+            options={[
+              { value: '', label: 'All Payment Statuses' },
+              { value: 'NOT_RAISED', label: 'Not Raised' },
+              { value: 'INVOICE_RAISED', label: 'Invoice Raised' },
+              { value: 'PENDING', label: 'Pending' },
+              { value: 'PARTIAL', label: 'Partial' },
+              { value: 'RECEIVED', label: 'Received' },
+              { value: 'OVERDUE', label: 'Overdue' },
             ]}
             className="mt-1"
           />
@@ -482,6 +550,122 @@ export default function DashboardPage() {
           </p>
         </div>
       </div>
+
+      {/* Payment summary */}
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="ems-card cursor-pointer p-5 border border-slate-100 hover:shadow-md transition-all" onClick={() => setPaymentDrilldown(true)}>
+          <p className="text-xs font-semibold text-slate-500">Total Invoice Amount</p>
+          <p className="mt-2 text-2xl font-bold text-slate-800">
+            <AnimatedCounter value={stats?.payment?.totalInvoiceAmount ?? 0} />
+          </p>
+        </div>
+        <div className="ems-card p-5 border border-slate-100 hover:shadow-md transition-all">
+          <p className="text-xs font-semibold text-slate-500">Payment Received</p>
+          <p className="mt-2 text-2xl font-bold text-emerald-600">
+            <AnimatedCounter value={stats?.payment?.totalReceived ?? 0} />
+          </p>
+        </div>
+        <div className="ems-card cursor-pointer p-5 border border-slate-100 hover:shadow-md transition-all" onClick={() => setPaymentDrilldown(true)}>
+          <p className="text-xs font-semibold text-slate-500">Remaining Payment</p>
+          <p className="mt-2 text-2xl font-bold text-rose-600">
+            <AnimatedCounter value={stats?.payment?.totalRemaining ?? 0} />
+          </p>
+        </div>
+        <div className="ems-card p-5 border border-slate-100">
+          <p className="text-xs font-semibold text-slate-500">Pending Invoices</p>
+          <p className="mt-2 text-2xl font-bold text-amber-600">
+            <AnimatedCounter value={stats?.payment?.byStatus?.find((s: any) => s.status === 'PENDING')?.count ?? 0} />
+          </p>
+        </div>
+        <div className="ems-card p-5 border border-slate-100">
+          <p className="text-xs font-semibold text-slate-500">Partial Paid</p>
+          <p className="mt-2 text-2xl font-bold text-orange-600">
+            <AnimatedCounter value={stats?.payment?.byStatus?.find((s: any) => s.status === 'PARTIAL')?.count ?? 0} />
+          </p>
+        </div>
+        <div className="ems-card p-5 border border-slate-100">
+          <p className="text-xs font-semibold text-slate-500">Fully Paid</p>
+          <p className="mt-2 text-2xl font-bold text-green-700">
+            <AnimatedCounter value={stats?.payment?.byStatus?.find((s: any) => s.status === 'RECEIVED')?.count ?? 0} />
+          </p>
+        </div>
+      </div>
+
+      {(stats?.scopedToSuperSales || (stats?.salespersonBreakdown?.length ?? 0) > 0) && (
+        <div className="mt-4 ems-card p-5 border border-slate-100">
+          {stats?.scopedToSuperSales && (
+            <p className="mb-3 text-sm text-slate-600">
+              Showing contracts you created as Super Sales. Salesperson credit is equal across tagged people.
+            </p>
+          )}
+          <h3 className="mb-3 font-semibold text-slate-800">Salesperson Breakdown (equal credit)</h3>
+          {(stats?.salespersonBreakdown?.length ?? 0) === 0 ? (
+            <p className="text-sm text-slate-400">No salesperson attributions in this filter range.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="ems-table w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Salesperson</th>
+                    <th>Contracts</th>
+                    <th>Total MT</th>
+                    <th>Containers</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(stats.salespersonBreakdown as any[]).map((row) => (
+                    <tr key={row.salespersonId}>
+                      <td className="font-medium">{row.name}</td>
+                      <td>{row.contracts}</td>
+                      <td>{Number(row.totalMt ?? 0).toFixed(3)}</td>
+                      <td>{row.containers}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {paymentDrilldown && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Remaining Payment — Contributing Invoices</h3>
+              <button type="button" className="ems-btn-secondary text-sm" onClick={() => setPaymentDrilldown(false)}>Close</button>
+            </div>
+            <table className="ems-table w-full">
+              <thead>
+                <tr>
+                  <th>Invoice</th>
+                  <th>Contract</th>
+                  <th>Container</th>
+                  <th>Buyer</th>
+                  <th>Remaining</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(stats?.payment?.remainingInvoices ?? []).map((inv: any, i: number) => (
+                  <tr key={i}>
+                    <td>{inv.invoiceNumber || '—'}</td>
+                    <td>
+                      <Link href={`/contracts/${inv.contractId}`} className="text-blue-600 hover:underline">
+                        {inv.contractNumber}
+                      </Link>
+                    </td>
+                    <td>{inv.containerIndex}</td>
+                    <td>{inv.buyer}</td>
+                    <td>{inv.remainingAmount}</td>
+                    <td>{inv.paymentStatus}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Center Layout: Charts, Circular Progress, and Selected Product Insights */}
       <div className="mt-6 grid gap-6 lg:grid-cols-3">

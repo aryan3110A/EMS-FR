@@ -62,21 +62,38 @@ export function validateStep(
     if (form.totalMt && !validateContainerQuantities(form.totalMt, mts)) {
       errors.quantityMt = `Total allocated MT (${mts.reduce((a, b) => a + b, 0).toFixed(3)}) must equal contract quantity (${form.totalMt} MT).`;
     }
+    // Every container must be filled before leaving Quantity step
     containerProducts.forEach((c, i) => {
-      const isCurrent = options?.activeContainerIdx === i;
-      if (requireAll || isCurrent) {
-        if (!c.expectedShipmentDate) errors[`container_${i}_expectedShipmentDate`] = 'Expected shipment date is required.';
-        if (!c.destinationPortId) errors[`container_${i}_destinationPortId`] = 'Destination port is required.';
+      if (!c.expectedShipmentDate) {
+        errors[`container_${i}_expectedShipmentDate`] = `Container ${i + 1}: expected shipment date is required.`;
+      }
+      if (!c.destinationPortId) {
+        errors[`container_${i}_destinationPortId`] = `Container ${i + 1}: destination port is required.`;
       }
     });
   }
 
   if (step === 3) {
     containerProducts.forEach((c, i) => {
+      const lines = c.products?.length ? c.products : c.productId ? [{ ...c, quantityMt: c.quantityMt ?? 0 }] : [];
+      if (!lines.length) {
+        errors[`container_${i}_productId`] = `Container ${i + 1}: at least one product is required.`;
+        return;
+      }
+      const sum = lines.reduce((s, p) => s + (p.quantityMt || 0), 0);
+      const containerMt = c.quantityMt ?? 0;
+      if (containerMt > 0 && Math.abs(sum - containerMt) > 0.001) {
+        errors[`container_${i}_products`] =
+          `Container ${i + 1}: total product quantity (${sum.toFixed(3)} MT) must match container quantity (${containerMt} MT).`;
+      }
       const isCurrent = options?.activeContainerIdx === i;
-      if (requireAll || isCurrent) {
-        if (!c.productId) errors[`container_${i}_productId`] = `Container ${i + 1}: product is required.`;
-        if (!c.specification) errors[`container_${i}_specification`] = `Container ${i + 1}: specification is required.`;
+      if (requireAll || isCurrent || true) {
+        lines.forEach((p, pi) => {
+          if (!p.productId) errors[`container_${i}_product_${pi}`] = `Container ${i + 1} row ${pi + 1}: product is required.`;
+          if (!p.specification && !c.specification) {
+            errors[`container_${i}_spec_${pi}`] = `Container ${i + 1} row ${pi + 1}: specification is required.`;
+          }
+        });
       }
     });
   }
@@ -97,10 +114,20 @@ export function validateStep(
 
   if (step === 5) {
     if (requireAll && !form.paymentType) errors.paymentType = 'Payment type is required.';
+    if (
+      (form.paymentType === 'OTHERS' || form.balancePaymentMode === 'OTHERS') &&
+      !form.otherPaymentMethod?.trim()
+    ) {
+      errors.otherPaymentMethod = 'Please specify the other payment method.';
+    }
     containerProducts.forEach((c, i) => {
       const isCurrent = options?.activeContainerIdx === i;
       if (requireAll || isCurrent) {
-        if (!c.packagingTypeId && !c.packingDescription) {
+        const hasPack =
+          c.packagingTypeId ||
+          c.packingDescription ||
+          c.products?.some((p) => p.packagingTypeId || p.packingDescription);
+        if (!hasPack) {
           errors[`container_${i}_packaging`] = 'Packaging type or description is required.';
         }
       }

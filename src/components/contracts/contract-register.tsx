@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Contract, ContractContainer } from '@/lib/api';
 import { formatDate, formatNumber, statusBadge, statusLabel } from '@/lib/utils';
+import { paymentRollup, productSummaryFromContainers } from '@/lib/contract-form-mapper';
 
 type BuyerGroup = {
   key: string;
@@ -119,8 +120,26 @@ function ContainerPanel({ container }: { container: ContractContainer }) {
           value={container.shipmentHalf?.replace(/_/g, ' ')}
         />
         <DetailItem label="Specification" value={container.specification} />
-        <DetailItem label="Remarks" value={container.productRemarks} />
+        <DetailItem label="Invoice No." value={container.invoiceNumber ?? '—'} />
+        <DetailItem label="Invoice Amount" value={container.invoiceAmount != null ? formatNumber(container.invoiceAmount, 0) : '—'} />
+        <DetailItem label="Payment Status" value={container.paymentStatus?.replace(/_/g, ' ') ?? '—'} />
+        <DetailItem label="Remaining" value={container.remainingAmount != null ? formatNumber(container.remainingAmount, 0) : '—'} />
+        <DetailItem label="Factory Seal" value={container.factorySealNo ?? '—'} />
+        <DetailItem label="Shipping Line Seal" value={container.shippingLineSealNo ?? '—'} />
+        <DetailItem label="Container Status" value={container.containerStatus?.replace(/_/g, ' ') ?? '—'} />
       </div>
+      {!!container.products?.length && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <p className="mb-2 text-xs font-medium text-slate-500">Products in container</p>
+          <ul className="space-y-1 text-sm text-slate-700">
+            {container.products.map((p) => (
+              <li key={p.id}>
+                {p.product?.name || p.productId}: {p.quantityMt} MT
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -129,6 +148,11 @@ function ContractCard({ contract }: { contract: Contract }) {
   const [openContainerIndex, setOpenContainerIndex] = useState<number | null>(null);
   const containers = resolveContainers(contract);
   const showContainers = (contract.numberOfContainers ?? 0) > 0;
+  const salesNames =
+    contract.salesAttributions?.map((a) => a.salesperson?.name).filter(Boolean).join(', ') ||
+    contract.salesperson?.name;
+  const pay = paymentRollup(contract.containers);
+  const productSummary = productSummaryFromContainers(contract.containers);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
@@ -142,13 +166,21 @@ function ContractCard({ contract }: { contract: Contract }) {
           </Link>
         </DetailItem>
         <DetailItem label="Contract Date" value={formatDate(contract.contractDate)} />
-        <DetailItem label="Salesperson" value={contract.salesperson?.name} />
-        <DetailItem label="Product" value={contract.product?.code} />
+        <DetailItem label="Created By" value={contract.createdBy?.name} />
+        <DetailItem
+          label="Super Sales"
+          value={contract.createdBy?.role === 'SUPER_SALES' ? contract.createdBy?.name : '—'}
+        />
+        <DetailItem
+          label="Created By Role"
+          value={contract.createdBy?.role === 'SUPER_SALES' ? 'Super Sales' : contract.createdBy?.role}
+        />
+        <DetailItem label="Salesperson Responsible" value={salesNames} />
+        <DetailItem label="Product Summary" value={productSummary} />
         <DetailItem label="Total MT" value={contract.totalMt} />
         <DetailItem label="Containers" value={contract.numberOfContainers} />
-        <DetailItem label="FOB Price" value={formatNumber(contract.fobPrice, 0)} />
-        <DetailItem label="FOB Currency" value={contract.fobCurrency} />
-        <DetailItem label="CIF Price" value={formatNumber(contract.cifPrice, 0)} />
+        <DetailItem label="Payment Status" value={pay.status.replace(/_/g, ' ')} />
+        <DetailItem label="Remaining Payment" value={formatNumber(pay.remaining, 0)} />
         <DetailItem label="Port" value={contract.destinationPort?.name} />
         <DetailItem label="Shipment" value={contract.shipmentMonth} />
         <div>

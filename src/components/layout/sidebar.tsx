@@ -82,11 +82,11 @@ export function Sidebar() {
             { href: '/contracts', label: 'Contracts', icon: FileText },
           ];
 
-          if (['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(role)) {
+          if (['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'SUPER_SALES'].includes(role)) {
             items.push({ href: '/contracts/new', label: 'New Contract', icon: FilePlus2 });
           }
 
-          if (['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(role)) {
+          if (['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'SUPER_SALES'].includes(role)) {
             items.push({ href: '/masters', label: 'Masters', icon: Package });
           }
 

@@ -8,6 +8,7 @@ import { ContractDetailSkeleton } from '@/components/ui/page-loader';
 import { AmendmentModal } from '@/components/contracts/amendment-modal';
 import { AmendmentHistory } from '@/components/contracts/amendment-history';
 import { AuditLogPanel } from '@/components/contracts/audit-log-panel';
+import { ContainerStatusUpdater } from '@/components/contracts/container-status-updater';
 import { api, ContractContainer } from '@/lib/api';
 import { useCachedQuery, invalidateQueryCache } from '@/lib/use-cached-query';
 import { showSuccess } from '@/lib/toast';
@@ -105,8 +106,18 @@ export default function ContractDetailPage() {
   const canAmend = (c: ContractContainer) => {
     const vis = commercialFieldVisibility((c.incoterm ?? 'FOB') as 'FOB' | 'CIF' | 'CNF');
     const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
-    const roleOk = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(user.role);
-    return vis.changeAmendment && c.containerStatus === 'REACHED_PORT' && roleOk;
+    const roleOk = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'SUPER_SALES'].includes(user.role);
+    return vis.changeAmendment && roleOk;
+  };
+
+  const canUpdateContainerStatus = (() => {
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+    return ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'PRODUCTION_TEAM', 'SUPER_SALES'].includes(user.role);
+  })();
+
+  const refreshContract = () => {
+    invalidateQueryCache(`contract:${id}`);
+    window.location.reload();
   };
 
   return (
@@ -140,8 +151,18 @@ export default function ContractDetailPage() {
               [BASIC_DATE_LABELS.receivedDate, formatDate(contract.receivedDate)],
               [BASIC_DATE_LABELS.contractDate, formatDate(contract.contractDate)],
               [BASIC_DATE_LABELS.signedContractReceivedDate, formatDate(contract.signedContractReceivedDate)],
-              ['Salesperson', contract.salesperson?.name],
-              ['Invoice No.', contract.invoiceNumber ?? 'Pending'],
+              ['Created By', contract.createdBy?.name],
+              ['Created By Role', contract.createdBy?.role === 'SUPER_SALES' ? 'Super Sales' : contract.createdBy?.role],
+              [
+                'Salesperson Responsible',
+                contract.salesAttributions?.map((a) => a.salesperson?.name).filter(Boolean).join(', ') ||
+                  contract.salesperson?.name,
+              ],
+              [
+                'Super Sales',
+                contract.createdBy?.role === 'SUPER_SALES' ? contract.createdBy?.name : '—',
+              ],
+              ['Created On', formatDate(contract.createdAt as string | undefined)],
               ['Status', statusLabel(contract.status)],
             ].map(([label, value]) => (
               <Row key={String(label)} label={String(label)} value={value} />
@@ -200,6 +221,14 @@ export default function ContractDetailPage() {
                     <MiniField label={CONTAINER_FIELD_LABELS.expectedShipmentDate} value={formatDate(c.expectedShipmentDate)} />
                     <MiniField label={CONTAINER_FIELD_LABELS.shipmentPeriod} value={period} />
                     <MiniField label={CONTAINER_FIELD_LABELS.shippingContainerNo} value={c.containerNo ?? 'Pending'} />
+                    <MiniField label="Factory Seal" value={c.factorySealNo ?? '—'} />
+                    <MiniField label="Shipping Line Seal" value={c.shippingLineSealNo ?? '—'} />
+                    <MiniField label="Container Status" value={c.containerStatus?.replace(/_/g, ' ') ?? '—'} />
+                    <MiniField label="Invoice No." value={c.invoiceNumber ?? '—'} />
+                    <MiniField label="Invoice Amount" value={formatNumber(c.invoiceAmount, 0)} />
+                    <MiniField label="Payment Status" value={c.paymentStatus?.replace(/_/g, ' ') ?? '—'} />
+                    <MiniField label="Received Amount" value={formatNumber(c.receivedAmount, 0)} />
+                    <MiniField label="Remaining Amount" value={formatNumber(c.remainingAmount, 0)} />
                     <MiniField label="Incoterm" value={c.incoterm} />
                     <MiniField label="FOB Price" value={formatNumber(c.fobPrice, 2)} />
                     <MiniField label="FOB Currency" value={c.fobCurrency} />
@@ -217,7 +246,46 @@ export default function ContractDetailPage() {
                     {vis.changeAmendment && (
                       <MiniField label="Current Price" value={formatNumber(containerPrice(c), 2)} />
                     )}
+                    {vis.changeAmendment && c.originalCifCnfPrice != null && (
+                      <MiniField label="Original Calculated Price" value={formatNumber(c.originalCifCnfPrice, 2)} />
+                    )}
                   </div>
+                  {!!c.products?.length && (
+                    <div className="mt-4 border-t border-slate-100 pt-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Products</p>
+                      <ul className="space-y-1 text-sm text-slate-700">
+                        {c.products.map((p) => (
+                          <li key={p.id}>
+                            {p.product?.code} — {p.product?.name}: {formatNumber(p.quantityMt, 3)} MT
+                            {p.specification ? ` · ${p.specification}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {!!c.amendments?.length && (
+                    <div className="mt-4 border-t border-slate-100 pt-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Price Change History</p>
+                      <ul className="space-y-2 text-sm text-slate-700">
+                        {c.amendments.map((a) => (
+                          <li key={a.id} className="rounded-lg bg-slate-50 p-2">
+                            {a.incoterm}: {a.previousValue} → {a.amendedValue} {a.currency}
+                            {a.amendedBy?.name ? ` by ${a.amendedBy.name}` : ''} · {formatDate(a.amendmentDate)}
+                            <br />
+                            <span className="text-slate-500">Reason: {a.reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {c.id !== 'legacy' && (
+                    <ContainerStatusUpdater
+                      contractId={contract.id}
+                      container={c}
+                      canUpdate={canUpdateContainerStatus}
+                      onUpdated={refreshContract}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -231,6 +299,7 @@ export default function ContractDetailPage() {
               ['Payment Type', contract.paymentType?.replace(/_/g, ' ')],
               ['Advance %', contract.advancePercentage ? `${contract.advancePercentage}%` : '—'],
               ['Balance Stage', contract.balancePaymentStage ?? '—'],
+              ['Other Payment Method', contract.otherPaymentMethod ?? '—'],
             ].map(([label, value]) => (
               <Row key={String(label)} label={String(label)} value={value} />
             ))}
