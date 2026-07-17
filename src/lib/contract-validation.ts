@@ -3,14 +3,30 @@ import { validateContainerQuantities } from '@/lib/commercial-calculations';
 
 export type FieldErrors = Record<string, string>;
 
+/** Round to 3 decimal places (MT). Avoids float drift like 27 → 26.996. */
+export function roundMt(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 1000) / 1000;
+}
+
+/** Round to 2 decimal places (money). */
+export function roundMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Split total MT across containers using integer milli-MT units so the parts always sum exactly.
+ */
 export function distributeContainerMt(totalMt: number, count: number): number[] {
   if (count <= 0) return [];
-  const per = Math.round((totalMt / count) * 1000) / 1000;
-  const mts = Array.from({ length: count }, () => per);
-  const sum = mts.reduce((a, b) => a + b, 0);
-  const diff = Math.round((totalMt - sum) * 1000) / 1000;
-  if (diff !== 0) mts[mts.length - 1] = Math.round((mts[mts.length - 1] + diff) * 1000) / 1000;
-  return mts;
+  const totalMilli = Math.round(roundMt(totalMt) * 1000);
+  const base = Math.floor(totalMilli / count);
+  const remainder = totalMilli - base * count;
+  return Array.from({ length: count }, (_, i) => {
+    const milli = base + (i === count - 1 ? remainder : 0);
+    return milli / 1000;
+  });
 }
 
 export function validateBasicDates(form: Partial<ContractForm>): FieldErrors {
@@ -80,9 +96,9 @@ export function validateStep(
         errors[`container_${i}_productId`] = `Container ${i + 1}: at least one product is required.`;
         return;
       }
-      const sum = lines.reduce((s, p) => s + (p.quantityMt || 0), 0);
-      const containerMt = c.quantityMt ?? 0;
-      if (containerMt > 0 && Math.abs(sum - containerMt) > 0.001) {
+      const sum = roundMt(lines.reduce((s, p) => s + (p.quantityMt || 0), 0));
+      const containerMt = roundMt(c.quantityMt ?? 0);
+      if (containerMt > 0 && sum !== containerMt) {
         errors[`container_${i}_products`] =
           `Container ${i + 1}: total product quantity (${sum.toFixed(3)} MT) must match container quantity (${containerMt} MT).`;
       }

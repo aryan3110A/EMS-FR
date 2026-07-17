@@ -12,7 +12,7 @@ import { AddBuyerModal } from '@/components/buyers/add-buyer-modal';
 import { AddPortModal } from '@/components/ports/add-port-modal';
 import { BASIC_DATE_LABELS } from '@/lib/contract-labels';
 import { buildContainerProductsPayload } from '@/lib/contract-form-mapper';
-import { distributeContainerMt, validateStep, containerStepComplete } from '@/lib/contract-validation';
+import { distributeContainerMt, validateStep, containerStepComplete, roundMt } from '@/lib/contract-validation';
 import { enrichContainerCommercial } from '@/lib/commercial-calculations';
 import { ContainerTabs } from '@/components/contracts/container-tabs';
 import { ContainerPackagingSection } from '@/components/contracts/container-packaging-section';
@@ -212,7 +212,14 @@ export default function NewContractPage() {
         next = prev.slice(0, n);
       }
 
-      return next.map((c, i) => ({ ...c, quantityMt: mts[i] }));
+      return next.map((c, i) => {
+        const quantityMt = mts[i];
+        const products =
+          c.products?.length === 1
+            ? c.products.map((p) => ({ ...p, quantityMt }))
+            : c.products;
+        return { ...c, quantityMt, ...(products ? { products } : {}) };
+      });
     });
   }, [containers, form.totalMt]);
 
@@ -235,7 +242,25 @@ export default function NewContractPage() {
   function patchContainerProduct(index: number, patch: Partial<ContainerProduct>) {
     setContainerProducts((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index], ...patch };
+      const current = next[index];
+      let merged = { ...current, ...patch };
+      if (patch.quantityMt != null && Number.isFinite(patch.quantityMt)) {
+        const quantityMt = Math.round(patch.quantityMt * 1000) / 1000;
+        merged = { ...merged, quantityMt };
+        if (merged.products?.length === 1) {
+          merged = {
+            ...merged,
+            products: merged.products.map((p) => ({ ...p, quantityMt })),
+          };
+        }
+      }
+      if (patch.invoiceAmount != null && Number.isFinite(patch.invoiceAmount)) {
+        merged = { ...merged, invoiceAmount: Math.round(patch.invoiceAmount * 100) / 100 };
+      }
+      if (patch.receivedAmount != null && Number.isFinite(patch.receivedAmount)) {
+        merged = { ...merged, receivedAmount: Math.round(patch.receivedAmount * 100) / 100 };
+      }
+      next[index] = merged;
       return next;
     });
   }
@@ -973,7 +998,7 @@ export default function NewContractPage() {
                   step="0.001"
                   className="ems-input"
                   value={form.totalMt}
-                  onChange={(e) => setField('totalMt', parseFloat(e.target.value))}
+                  onChange={(e) => setField('totalMt', roundMt(parseFloat(e.target.value) || 0))}
                 />
               </Field>
               <Field label="No. of Containers">

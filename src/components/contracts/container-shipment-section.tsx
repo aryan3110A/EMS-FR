@@ -7,6 +7,7 @@ import type { ContainerProduct, Port } from '@/lib/api';
 import { ADD_OPTION_VALUE } from '@/lib/form-constants';
 import { CONTAINER_FIELD_LABELS } from '@/lib/contract-labels';
 import { deriveShipmentFromExpectedDate, shipmentPeriodReadOnly } from '@/lib/shipment-period';
+import { roundMoney, roundMt } from '@/lib/contract-validation';
 import { showInfo } from '@/lib/toast';
 
 type ContainerShipmentSectionProps = {
@@ -50,7 +51,7 @@ export function ContainerShipmentSection({
 
   const remaining =
     data.invoiceAmount != null
-      ? Math.round((data.invoiceAmount - (data.receivedAmount ?? 0)) * 1000) / 1000
+      ? roundMoney(data.invoiceAmount - (data.receivedAmount ?? 0))
       : undefined;
 
   return (
@@ -72,7 +73,11 @@ export function ContainerShipmentSection({
             min={0.001}
             className="ems-input"
             value={data.quantityMt ?? ''}
-            onChange={(e) => onPatch({ quantityMt: parseFloat(e.target.value) || undefined })}
+            onChange={(e) => onPatch({ quantityMt: roundMt(parseFloat(e.target.value) || 0) })}
+            onBlur={(e) => {
+              const v = parseFloat(e.target.value);
+              if (Number.isFinite(v)) onPatch({ quantityMt: roundMt(v) });
+            }}
           />
           <FieldError message={errors[`container_${index}_quantityMt`]} />
         </Field>
@@ -163,7 +168,10 @@ export function ContainerShipmentSection({
             step="0.01"
             className="ems-input"
             value={data.invoiceAmount ?? ''}
-            onChange={(e) => onPatch({ invoiceAmount: parseFloat(e.target.value) || undefined })}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              onPatch({ invoiceAmount: Number.isFinite(v) ? roundMoney(v) : undefined });
+            }}
           />
         </Field>
         <Field label="Invoice Date">
@@ -194,7 +202,10 @@ export function ContainerShipmentSection({
             step="0.01"
             className="ems-input"
             value={data.receivedAmount ?? ''}
-            onChange={(e) => onPatch({ receivedAmount: parseFloat(e.target.value) || undefined })}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              onPatch({ receivedAmount: Number.isFinite(v) ? roundMoney(v) : undefined });
+            }}
           />
         </Field>
         <Field label="Remaining Amount">

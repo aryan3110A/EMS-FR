@@ -7,6 +7,7 @@ import { InlineAddPanel } from '@/components/ui/inline-add-panel';
 import { ADD_OPTION_VALUE } from '@/lib/form-constants';
 import { PRODUCT_SPECIFICATIONS } from '@/lib/commercial-calculations';
 import type { ContainerProduct, ContainerProductLine, Product } from '@/lib/api';
+import { roundMt } from '@/lib/contract-validation';
 import { showInfo } from '@/lib/toast';
 import { Plus, Trash2 } from 'lucide-react';
 
@@ -117,7 +118,7 @@ export function ContainerProductSection({
   }
 
   function addProductRow() {
-    const remaining = Math.max(0, Math.round((containerMt - productSum) * 1000) / 1000);
+    const remaining = Math.max(0, roundMt(containerMt - productSum));
     commitLines([...lines, emptyLine(remaining || 0)]);
   }
 
@@ -226,7 +227,7 @@ export function ContainerProductSection({
                   min={0.001}
                   className="ems-input"
                   value={line.quantityMt ?? ''}
-                  onChange={(e) => updateLine(rowIdx, { quantityMt: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => updateLine(rowIdx, { quantityMt: roundMt(parseFloat(e.target.value) || 0) })}
                 />
               </Field>
 

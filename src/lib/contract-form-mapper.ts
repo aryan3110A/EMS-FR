@@ -270,7 +270,7 @@ export function paymentRollup(containers?: Contract['containers']): {
   const list = containers || [];
   const invoiceTotal = list.reduce((s, c) => s + (c.invoiceAmount || 0), 0);
   const receivedTotal = list.reduce((s, c) => s + (c.receivedAmount || 0), 0);
-  const remaining = Math.round((invoiceTotal - receivedTotal) * 1000) / 1000;
+  const remaining = Math.round((invoiceTotal - receivedTotal) * 100) / 100;
   const statuses = list.map((c) => c.paymentStatus || 'NOT_RAISED');
   let status = 'NOT_RAISED';
   if (statuses.some((s) => s === 'PARTIAL' || (s === 'PENDING' && receivedTotal > 0))) status = 'PARTIAL';

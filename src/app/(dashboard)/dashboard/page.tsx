@@ -7,7 +7,8 @@ import { DashboardSkeleton } from '@/components/ui/page-loader';
 import { EmsSelect } from '@/components/ui/ems-select';
 import { UpcomingProductChart } from '@/components/dashboard/upcoming-product-chart';
 import { ShippedProductChart } from '@/components/dashboard/shipped-product-chart';
-import { api } from '@/lib/api';
+import { api, type DashboardStats } from '@/lib/api';
+import { useCachedQuery } from '@/lib/use-cached-query';
 import { formatDate, statusBadge, statusLabel } from '@/lib/utils';
 import {
   FileText,
@@ -25,6 +26,9 @@ import {
   ArrowRight,
   ShieldAlert
 } from 'lucide-react';
+
+const DASHBOARD_TTL_MS = 5 * 60 * 1000; // 5 minutes — skip refetch on quick revisits
+const MASTERS_TTL_MS = 15 * 60 * 1000;
 
 function AnimatedCounter({ value, duration = 800 }: { value: number; duration?: number }) {
   const [count, setCount] = useState(0);
@@ -71,12 +75,37 @@ export default function DashboardPage() {
   const [superSalesUserId, setSuperSalesUserId] = useState<string>('');
   const [paymentStatus, setPaymentStatus] = useState<string>('');
 
-  // Dropdown list states loaded from API
-  const [products, setProducts] = useState<any[]>([]);
-  const [buyers, setBuyers] = useState<any[]>([]);
-  const [ports, setPorts] = useState<any[]>([]);
-  const [salespersons, setSalespersons] = useState<any[]>([]);
-  const [superSalesUsers, setSuperSalesUsers] = useState<any[]>([]);
+  // Dropdowns + stats (cached — revisit within TTL does not refetch)
+  const { data: productsData } = useCachedQuery(
+    'dashboard:masters:products',
+    () => api.masters.products().catch(() => []),
+    { ttl: MASTERS_TTL_MS },
+  );
+  const { data: buyersData } = useCachedQuery(
+    'dashboard:masters:buyers',
+    () => api.masters.buyers().catch(() => []),
+    { ttl: MASTERS_TTL_MS },
+  );
+  const { data: portsData } = useCachedQuery(
+    'dashboard:masters:ports',
+    () => api.masters.ports().catch(() => []),
+    { ttl: MASTERS_TTL_MS },
+  );
+  const { data: salespersonsData } = useCachedQuery(
+    'dashboard:masters:salespersons',
+    () => api.masters.salespersons().catch(() => []),
+    { ttl: MASTERS_TTL_MS },
+  );
+  const { data: superSalesUsersData } = useCachedQuery(
+    'dashboard:masters:supersales',
+    () => api.masters.users('SUPER_SALES').catch(() => []),
+    { ttl: MASTERS_TTL_MS },
+  );
+  const products = productsData ?? [];
+  const buyers = buyersData ?? [];
+  const ports = portsData ?? [];
+  const salespersons = salespersonsData ?? [];
+  const superSalesUsers = superSalesUsersData ?? [];
 
   // Selected product state for insights panel
   const [selectedProductCode, setSelectedProductCode] = useState<string | null>(null);
@@ -85,12 +114,6 @@ export default function DashboardPage() {
   const [drilldownProduct, setDrilldownProduct] = useState<any | null>(null);
   const [paymentDrilldown, setPaymentDrilldown] = useState(false);
   const [drilldownType, setDrilldownType] = useState<'upcoming' | 'shipped'>('upcoming');
-
-  // Stats Data
-  const [stats, setStats] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  const filteredShipments = stats?.upcoming?.shipments || [];
 
   // Compute start and end dates based on Quick range
   const computedParams = useMemo(() => {
@@ -145,37 +168,18 @@ export default function DashboardPage() {
     paymentStatus,
   ]);
 
-  // Load Dropdowns
-  useEffect(() => {
-    Promise.all([
-      api.masters.products().catch(() => []),
-      api.masters.buyers().catch(() => []),
-      api.masters.ports().catch(() => []),
-      api.masters.salespersons().catch(() => []),
-      api.masters.users('SUPER_SALES').catch(() => []),
-    ]).then(([prodList, buyerList, portList, spList, ssList]) => {
-      setProducts(prodList);
-      setBuyers(buyerList);
-      setPorts(portList);
-      setSalespersons(spList);
-      setSuperSalesUsers(ssList);
-    });
-  }, []);
+  const dashboardCacheKey = useMemo(
+    () => `dashboard:stats:${JSON.stringify(computedParams)}`,
+    [computedParams],
+  );
 
-  // Fetch Dashboard Stats
-  useEffect(() => {
-    setLoading(true);
-    api.dashboard(computedParams)
-      .then((res) => {
-        setStats(res);
-      })
-      .catch((err) => {
-        console.error('Failed to load dashboard statistics', err);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [computedParams]);
+  const { data: stats, loading } = useCachedQuery<DashboardStats>(
+    dashboardCacheKey,
+    () => api.dashboard(computedParams),
+    { ttl: DASHBOARD_TTL_MS },
+  );
+
+  const filteredShipments = stats?.upcoming?.shipments || [];
 
   // Client-side computations for Selected Product Insights
   const productInsights = useMemo(() => {
@@ -613,7 +617,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(stats.salespersonBreakdown as any[]).map((row) => (
+                  {(stats?.salespersonBreakdown as any[]).map((row) => (
                     <tr key={row.salespersonId}>
                       <td className="font-medium">{row.name}</td>
                       <td>{row.contracts}</td>

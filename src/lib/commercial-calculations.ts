@@ -74,6 +74,7 @@ export function commercialFieldVisibility(incoterm: IncotermType) {
 }
 
 export function validateContainerQuantities(totalMt: number, containerMts: number[]): boolean {
-  const sum = containerMts.reduce((a, b) => a + b, 0);
-  return Math.abs(sum - totalMt) < 0.001;
+  const sum = Math.round(containerMts.reduce((a, b) => a + b, 0) * 1000) / 1000;
+  const total = Math.round(totalMt * 1000) / 1000;
+  return sum === total;
 }
