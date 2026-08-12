@@ -45,7 +45,6 @@ export function NotificationBell() {
         try {
           const newNotification = JSON.parse(event.data);
           setItems((prev) => {
-            // Avoid duplicate additions
             if (prev.some((n) => n.id === newNotification.id)) return prev;
             return [newNotification, ...prev];
           });
@@ -59,19 +58,13 @@ export function NotificationBell() {
         if (eventSource) {
           eventSource.close();
         }
-        // Fall back to polling every 5 minutes
         if (!fallbackInterval) {
           fallbackInterval = setInterval(load, 5 * 60 * 1000);
         }
       };
     } else {
-      // If token isn't available, poll every 5 minutes
       fallbackInterval = setInterval(load, 5 * 60 * 1000);
     }
-
-    // Refresh immediately when the user returns to/focuses the browser tab
-    const handleFocus = () => load();
-    window.addEventListener('focus', handleFocus);
 
     return () => {
       if (eventSource) {
@@ -80,7 +73,6 @@ export function NotificationBell() {
       if (fallbackInterval) {
         clearInterval(fallbackInterval);
       }
-      window.removeEventListener('focus', handleFocus);
     };
   }, []);
 

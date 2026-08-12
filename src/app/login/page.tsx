@@ -21,7 +21,12 @@ export default function LoginPage() {
       const res = await api.login(email, password);
       localStorage.setItem('ems_token', res.accessToken);
       localStorage.setItem('ems_user', JSON.stringify(res.user));
-      router.push('/dashboard');
+      const role = res.user?.role;
+      if (role === 'PRODUCTION_TEAM' || role === 'INVENTORY_TEAM') {
+        router.push('/production/dashboard');
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Login failed';
       setError(message);

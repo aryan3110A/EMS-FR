@@ -170,6 +170,69 @@ export const api = {
       return request<{ id: string; name: string; email: string; role: string }[]>(`/masters/users${q}`);
     },
   },
+  production: {
+    locations: () => request<any[]>('/production/masters/locations'),
+    suppliers: () => request<any[]>('/production/masters/suppliers'),
+    createSupplier: (data: { name: string; code?: string; phone?: string }) =>
+      request<any>('/production/masters/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+    inwardTypes: () => request<any[]>('/production/masters/inward-types'),
+    wastageTypes: (stage?: string) =>
+      request<any[]>(`/production/masters/wastage-types${stage ? `?stage=${stage}` : ''}`),
+    settings: () => request<any>('/production/settings'),
+    reopenCleaning: (id: string, data?: { reason?: string }) =>
+      request<any>(`/production/runs/${id}/reopen-cleaning`, {
+        method: 'POST',
+        body: JSON.stringify(data || {}),
+      }),
+    inwards: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any[]>(`/production/inwards${q}`);
+    },
+    createInward: (data: Record<string, unknown>) =>
+      request<any>('/production/inwards', { method: 'POST', body: JSON.stringify(data) }),
+    balances: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any[]>(`/production/inventory/balances${q}`);
+    },
+    ledger: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any[]>(`/production/inventory/ledger${q}`);
+    },
+    pendingContracts: () => request<any[]>('/production/pending-contracts'),
+    runs: () => request<any[]>('/production/runs'),
+    run: (id: string) => request<any>(`/production/runs/${id}`),
+    startRun: (data: Record<string, unknown>) =>
+      request<any>('/production/runs', { method: 'POST', body: JSON.stringify(data) }),
+    addInput: (id: string, data: Record<string, unknown>) =>
+      request<any>(`/production/runs/${id}/inputs`, { method: 'POST', body: JSON.stringify(data) }),
+    cleaning: (id: string, data: { lines: unknown[] }) =>
+      request<any>(`/production/runs/${id}/cleaning`, { method: 'POST', body: JSON.stringify(data) }),
+    hulling: (id: string, data: { lines: unknown[] }) =>
+      request<any>(`/production/runs/${id}/hulling`, { method: 'POST', body: JSON.stringify(data) }),
+    allocate: (id: string, data: Record<string, unknown>) =>
+      request<any>(`/production/runs/${id}/allocate`, { method: 'POST', body: JSON.stringify(data) }),
+    storeProcessed: (id: string, data?: Record<string, unknown>) =>
+      request<any>(`/production/runs/${id}/store-processed`, { method: 'POST', body: JSON.stringify(data || {}) }),
+    allocateFromStock: (data: Record<string, unknown>) =>
+      request<any>('/production/fulfilment/from-stock', { method: 'POST', body: JSON.stringify(data) }),
+    processedLots: () => request<any[]>('/production/processed-lots'),
+    samples: () => request<any[]>('/production/sampling'),
+    updateSample: (id: string, data: Record<string, unknown>) =>
+      request<any>(`/production/sampling/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    rejectedLots: () => request<any[]>('/production/rejected-lots'),
+    transfers: () => request<any[]>('/production/transfers'),
+    createTransfer: (data: Record<string, unknown>) =>
+      request<any>('/production/transfers', { method: 'POST', body: JSON.stringify(data) }),
+    dispatchTransfer: (id: string) =>
+      request<any>(`/production/transfers/${id}/dispatch`, { method: 'POST', body: '{}' }),
+    receiveTransfer: (id: string) =>
+      request<any>(`/production/transfers/${id}/receive`, { method: 'POST', body: '{}' }),
+    dashboard: () => request<any>('/production/dashboard'),
+    audit: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any[]>(`/production/audit${q}`);
+    },
+  },
 };
 
 export interface User {

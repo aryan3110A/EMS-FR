@@ -224,6 +224,24 @@ export default function ContractDetailPage() {
                     <MiniField label="Factory Seal" value={c.factorySealNo ?? '—'} />
                     <MiniField label="Shipping Line Seal" value={c.shippingLineSealNo ?? '—'} />
                     <MiniField label="Container Status" value={c.containerStatus?.replace(/_/g, ' ') ?? '—'} />
+                    <MiniField
+                      label="Production Fulfilled"
+                      value={`${formatNumber(
+                        ((contract as any).productionAllocations || [])
+                          .filter((a: any) => a.containerId === c.id)
+                          .reduce((s: number, a: any) => s + Number(a.quantityKg || 0), 0) / 1000,
+                        3,
+                      )} MT`}
+                    />
+                    <MiniField
+                      label="Sampling Status"
+                      value={
+                        ((contract as any).sampleRecords || [])
+                          .filter((s: any) => s.containerId === c.id)
+                          .map((s: any) => `${s.product?.code || ''}: ${String(s.status || '').replace(/_/g, ' ')}`)
+                          .join(' · ') || '—'
+                      }
+                    />
                     <MiniField label="Invoice No." value={c.invoiceNumber ?? '—'} />
                     <MiniField label="Invoice Amount" value={formatNumber(c.invoiceAmount, 0)} />
                     <MiniField label="Payment Status" value={c.paymentStatus?.replace(/_/g, ' ') ?? '—'} />
@@ -250,6 +268,26 @@ export default function ContractDetailPage() {
                       <MiniField label="Original Calculated Price" value={formatNumber(c.originalCifCnfPrice, 2)} />
                     )}
                   </div>
+                  {!!(contract as any).productionAllocations?.filter((a: any) => a.containerId === c.id).length && (
+                    <div className="mt-4 border-t border-slate-100 pt-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Production allocations (read-only)
+                      </p>
+                      <ul className="space-y-1 text-sm text-slate-700">
+                        {(contract as any).productionAllocations
+                          .filter((a: any) => a.containerId === c.id)
+                          .map((a: any) => (
+                            <li key={a.id}>
+                              {a.product?.code} — {formatNumber(a.quantityKg / 1000, 3)} MT
+                              {a.productionRun?.productionNumber ? ` · ${a.productionRun.productionNumber}` : ''}
+                              {a.processedLot?.lotNumber ? ` · lot ${a.processedLot.lotNumber}` : ''}
+                              {' · '}
+                              {formatDate(a.allocationDate)}
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  )}
                   {!!c.products?.length && (
                     <div className="mt-4 border-t border-slate-100 pt-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Products</p>

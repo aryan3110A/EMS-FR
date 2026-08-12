@@ -223,8 +223,8 @@ export function EmsSelect({
           disabled && 'cursor-not-allowed opacity-60',
         )}
       >
-        <span className={cn('truncate', !selected?.value && 'font-normal text-slate-400')}>
-          {selected?.value ? selected.label : placeholder}
+        <span className={cn('truncate', !value && 'font-normal text-slate-400')}>
+          {value && selected ? selected.label : placeholder}
         </span>
         <ChevronDown
           className={cn(

@@ -12,17 +12,10 @@ import {
   LogOut,
   Globe2,
   ChevronRight,
+  Factory,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NotificationBell } from '@/components/notifications/notification-bell';
-
-const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/contracts', label: 'Contracts', icon: FileText },
-  { href: '/contracts/new', label: 'New Contract', icon: FilePlus2 },
-  { href: '/masters', label: 'Masters', icon: Package },
-  { href: '/reports', label: 'Reports', icon: BarChart3 },
-];
 
 type StoredUser = {
   name?: string;
@@ -94,6 +87,12 @@ export function Sidebar() {
             items.push({ href: '/reports', label: 'Reports', icon: BarChart3 });
           }
 
+          if (
+            ['SUPER_ADMIN', 'OFFICE_ADMIN', 'PRODUCTION_TEAM', 'INVENTORY_TEAM'].includes(role)
+          ) {
+            items.push({ href: '/production/dashboard', label: 'Production', icon: Factory });
+          }
+
           if (['SUPER_ADMIN', 'OFFICE_ADMIN'].includes(role)) {
             items.push({ href: '/audit', label: 'Audit Logs', icon: Globe2 });
           }
@@ -105,6 +104,7 @@ export function Sidebar() {
               if (href === '/contracts') {
                 return pathname === '/contracts' || (pathname.startsWith('/contracts/') && pathname !== '/contracts/new');
               }
+              if (href === '/production/dashboard') return pathname.startsWith('/production');
               return pathname === href || pathname.startsWith(`${href}/`);
             })();
             return (
