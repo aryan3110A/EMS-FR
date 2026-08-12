@@ -133,8 +133,8 @@ export default function InventoryPage() {
                 <td>{e.entryType || e.txnType || e.transactionType}</td>
                 <td>{e.product?.name}</td>
                 <td>{e.location?.name || e.destLocation?.name || e.sourceLocation?.name}</td>
-                <td className={Number(e.quantityKg || e.quantityInKg - e.quantityOutKg) < 0 ? 'text-rose-600' : ''}>
-                  {formatNumber(Number(e.quantityKg ?? e.quantityInKg - e.quantityOutKg ?? 0) / 1000, 3)}
+                <td className={Number(e.quantityKg ?? (e.quantityInKg ?? 0) - (e.quantityOutKg ?? 0)) < 0 ? 'text-rose-600' : ''}>
+                  {formatNumber(Number(e.quantityKg ?? (e.quantityInKg ?? 0) - (e.quantityOutKg ?? 0)) / 1000, 3)}
                 </td>
                 <td className="text-xs text-slate-500">{e.referenceNumber || e.remarks || '—'}</td>
               </tr>

@@ -18,11 +18,12 @@ export default function ProductionAuditPage() {
 
   const { data: rows, loading } = useCachedQuery(
     key,
-    () =>
-      api.production.audit({
-        module: applied.module || undefined,
-        recordNumber: applied.recordNumber || undefined,
-      }),
+    () => {
+      const params: Record<string, string> = {};
+      if (applied.module) params.module = applied.module;
+      if (applied.recordNumber) params.recordNumber = applied.recordNumber;
+      return api.production.audit(params);
+    },
     { ttl: PRODUCTION_CACHE_TTL },
   );
 
