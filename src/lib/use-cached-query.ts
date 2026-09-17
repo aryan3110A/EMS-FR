@@ -85,8 +85,8 @@ export function useCachedQuery<T>(
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
-  const [data, setData] = useState<T | null>(() => readCache<T>(key, ttl));
-  const [loading, setLoading] = useState(() => enabled && !readCache<T>(key, ttl));
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(() => enabled);
   const [error, setError] = useState<Error | null>(null);
   const keyRef = useRef(key);
 
@@ -98,6 +98,7 @@ export function useCachedQuery<T>(
       setData(cached);
       setLoading(false);
     } else if (enabled) {
+      setData(null);
       setLoading(true);
     }
   }, [key, ttl, enabled]);

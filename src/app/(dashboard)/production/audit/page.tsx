@@ -73,9 +73,14 @@ export default function ProductionAuditPage() {
                   <td>{r.module}</td>
                   <td>{r.action}</td>
                   <td>{r.recordNumber || r.recordId || '—'}</td>
-                  <td>{r.user?.name || r.userName || '—'}</td>
-                  <td className="max-w-xs truncate text-xs text-slate-500">
-                    {typeof r.details === 'string' ? r.details : r.details ? JSON.stringify(r.details) : '—'}
+                  <td>{r.changedBy?.name || r.user?.name || r.changedById || '—'}</td>
+                  <td
+                    className="max-w-xs truncate text-xs text-slate-500"
+                    title={[r.oldValue, r.newValue, r.reason].filter(Boolean).join(' | ')}
+                  >
+                    {r.oldValue
+                      ? `old→new: ${r.oldValue} → ${r.newValue || '—'}`
+                      : r.newValue || r.reason || '—'}
                   </td>
                 </tr>
               ))}

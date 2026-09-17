@@ -253,10 +253,29 @@ export default function MastersPage() {
 
         <div className="ems-card p-5 lg:col-span-3">
           <h3 className="mb-3 font-semibold">Products</h3>
+          <p className="mb-2 text-xs text-slate-500">Full Process Allowed is only for Sesame Seed products unless you enable it here.</p>
           <ul className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
             {(products ?? []).map((p) => (
               <li key={p.id} className="rounded-lg bg-slate-50 px-3 py-2">
-                <span className="font-medium">{p.code}</span> — {p.name}
+                <p>
+                  <span className="font-medium">{p.code}</span> — {p.name}
+                </p>
+                <label className="mt-1 flex items-center gap-2 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={!!p.allowsFullProcess}
+                    onChange={async (e) => {
+                      try {
+                        await api.masters.updateProduct(p.id, { allowsFullProcess: e.target.checked });
+                        showSuccess(`${p.code} Full Process ${e.target.checked ? 'enabled' : 'disabled'}`);
+                        invalidateQueryCache('masters:products');
+                      } catch (err: unknown) {
+                        showError(err instanceof Error ? err.message : 'Update failed');
+                      }
+                    }}
+                  />
+                  Full Process Allowed
+                </label>
               </li>
             ))}
           </ul>

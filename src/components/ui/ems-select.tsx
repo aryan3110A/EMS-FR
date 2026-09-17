@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { usePathname } from 'next/navigation';
 import { ChevronDown, Check, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,7 @@ export function EmsSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
   const [pos, setPos] = useState<DropdownPos | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -96,7 +98,11 @@ export function EmsSelect({
     };
   }, [open, updatePosition]);
 
-  // Auto-focus search input when opening
+  useEffect(() => {
+    setOpen(false);
+    setSearch('');
+  }, [pathname]);
+
   useEffect(() => {
     if (open && searchable) {
       const t = setTimeout(() => searchRef.current?.focus(), 50);

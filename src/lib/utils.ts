@@ -5,10 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 export function formatDate(d?: string | Date | null) {
   if (!d) return '—';
-  const date = typeof d === 'string' ? new Date(d) : d;
-  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const raw = typeof d === 'string' ? d : d.toISOString();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) {
+    const date = typeof d === 'string' ? new Date(d) : d;
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${String(date.getUTCDate()).padStart(2, '0')} ${SHORT_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+  }
+  return `${m[3]} ${SHORT_MONTHS[Number(m[2]) - 1]} ${m[1]}`;
 }
 
 export function formatNumber(n?: number | null, decimals = 2) {

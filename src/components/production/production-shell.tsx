@@ -18,11 +18,12 @@ const TABS = [
   { href: '/production/inward', label: 'Inward' },
   { href: '/production/pending', label: 'Pending' },
   { href: '/production/runs', label: 'Runs' },
+  { href: '/production/job-work', label: 'Job Work' },
   { href: '/production/fulfilment', label: 'Fulfilment' },
   { href: '/production/sampling', label: 'Sampling' },
   { href: '/production/inventory', label: 'Inventory' },
-  { href: '/production/transfers', label: 'Transfers' },
   { href: '/production/wastage', label: 'Wastage' },
+  { href: '/production/transfers', label: 'Transfers' },
   { href: '/production/audit', label: 'Audit' },
 ];
 

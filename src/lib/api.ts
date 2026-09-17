@@ -130,6 +130,10 @@ export const api = {
       >,
     ) => request<Buyer>(`/masters/buyers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     products: () => request<Product[]>('/masters/products'),
+    updateProduct: (
+      id: string,
+      data: { allowsFullProcess?: boolean; allowsSortex?: boolean; samplingNormallyApplicable?: boolean },
+    ) => request<Product>(`/masters/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     packaging: () => request<PackagingType[]>('/masters/packaging'),
     ports: (includeInactive?: boolean) => {
       const q = includeInactive ? '?includeInactive=true' : '';
@@ -194,10 +198,27 @@ export const api = {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
       return request<any[]>(`/production/inventory/balances${q}`);
     },
+    inventoryByProduct: (locationId?: string) => {
+      const q = locationId ? `?locationId=${encodeURIComponent(locationId)}` : '';
+      return request<any[]>(`/production/inventory/by-product${q}`);
+    },
+    inventoryProductDetail: (id: string, locationId?: string) => {
+      const q = locationId ? `?locationId=${encodeURIComponent(locationId)}` : '';
+      return request<any>(`/production/inventory/products/${id}/detail${q}`);
+    },
     ledger: (params?: Record<string, string>) => {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
       return request<any[]>(`/production/inventory/ledger${q}`);
     },
+    wastageLots: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any[]>(`/production/wastage-lots${q}`);
+    },
+    discardWastageLot: (id: string, data?: { reason?: string }) =>
+      request<any>(`/production/wastage-lots/${id}/discard`, {
+        method: 'POST',
+        body: JSON.stringify(data || {}),
+      }),
     pendingContracts: () => request<any[]>('/production/pending-contracts'),
     runs: () => request<any[]>('/production/runs'),
     run: (id: string) => request<any>(`/production/runs/${id}`),
@@ -209,12 +230,21 @@ export const api = {
       request<any>(`/production/runs/${id}/cleaning`, { method: 'POST', body: JSON.stringify(data) }),
     hulling: (id: string, data: { lines: unknown[] }) =>
       request<any>(`/production/runs/${id}/hulling`, { method: 'POST', body: JSON.stringify(data) }),
-    allocate: (id: string, data: Record<string, unknown>) =>
-      request<any>(`/production/runs/${id}/allocate`, { method: 'POST', body: JSON.stringify(data) }),
-    storeProcessed: (id: string, data?: Record<string, unknown>) =>
-      request<any>(`/production/runs/${id}/store-processed`, { method: 'POST', body: JSON.stringify(data || {}) }),
+    finalise: (id: string, data: { dispositions: { wastageTypeId: string; action: string }[] }) =>
+      request<any>(`/production/runs/${id}/finalise`, { method: 'POST', body: JSON.stringify(data) }),
     allocateFromStock: (data: Record<string, unknown>) =>
       request<any>('/production/fulfilment/from-stock', { method: 'POST', body: JSON.stringify(data) }),
+    fulfilmentStock: (productId?: string, locationId?: string) => {
+      const params = new URLSearchParams();
+      if (productId) params.set('productId', productId);
+      if (locationId) params.set('locationId', locationId);
+      const q = params.toString() ? `?${params}` : '';
+      return request<any>(`/production/fulfilment/processed-stock${q}`);
+    },
+    matchingContainers: (productId: string) =>
+      request<any[]>(`/production/fulfilment/matching-containers?productId=${encodeURIComponent(productId)}`),
+    fulfilmentAllocate: (data: Record<string, unknown>) =>
+      request<any>('/production/fulfilment/allocate', { method: 'POST', body: JSON.stringify(data) }),
     processedLots: () => request<any[]>('/production/processed-lots'),
     samples: () => request<any[]>('/production/sampling'),
     updateSample: (id: string, data: Record<string, unknown>) =>
@@ -231,6 +261,42 @@ export const api = {
     audit: (params?: Record<string, string>) => {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
       return request<any[]>(`/production/audit${q}`);
+    },
+    jobWork: {
+      workers: () => request<any[]>('/production/job-work/workers'),
+      createWorker: (data: Record<string, unknown>) =>
+        request<any>('/production/job-work/workers', { method: 'POST', body: JSON.stringify(data) }),
+      list: (params?: Record<string, string>) => {
+        const q = params ? '?' + new URLSearchParams(params).toString() : '';
+        return request<any[]>(`/production/job-work${q}`);
+      },
+      get: (id: string) => request<any>(`/production/job-work/${id}`),
+      create: (data: Record<string, unknown>) =>
+        request<any>('/production/job-work', { method: 'POST', body: JSON.stringify(data) }),
+      outward: (id: string, data: Record<string, unknown>) =>
+        request<any>(`/production/job-work/${id}/outward`, { method: 'POST', body: JSON.stringify(data) }),
+      inward: (id: string, data: Record<string, unknown>) =>
+        request<any>(`/production/job-work/${id}/inward`, { method: 'POST', body: JSON.stringify(data) }),
+      processResult: (id: string, data: Record<string, unknown>) =>
+        request<any>(`/production/job-work/${id}/process-result`, {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      close: (id: string, data?: Record<string, unknown>) =>
+        request<any>(`/production/job-work/${id}/close`, {
+          method: 'POST',
+          body: JSON.stringify(data || {}),
+        }),
+      reopen: (id: string, data: Record<string, unknown>) =>
+        request<any>(`/production/job-work/${id}/reopen`, {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      reSortex: (id: string, data: Record<string, unknown>) =>
+        request<any>(`/production/job-work/${id}/re-sortex`, {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
     },
   },
 };
@@ -276,6 +342,10 @@ export interface Product {
   code: string;
   name: string;
   defaultSpecification?: string;
+  allowsFullProcess?: boolean;
+  allowsSortex?: boolean;
+  samplingNormallyApplicable?: boolean;
+  defaultUnit?: string;
   variants?: { id: string; code: string; name: string; processingType?: string }[];
 }
 

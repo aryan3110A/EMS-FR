@@ -18,7 +18,7 @@ export default function TransfersPage() {
     stockCategory: 'RAW_MATERIAL',
     productId: '',
     quantity: 0,
-    unit: 'MT',
+    unit: 'KG',
     remarks: '',
   });
 
@@ -89,7 +89,7 @@ export default function TransfersPage() {
                   {t.sourceLocation?.name} → {t.destLocation?.name} · {t.product?.name}
                 </p>
                 <p className="text-sm text-slate-500">
-                  {formatDate(t.transferDate)} · {formatNumber(Number(t.quantityKg) / 1000, 3)} MT ·{' '}
+                  {formatDate(t.transferDate)} · {formatNumber(Number(t.quantityKg), 0)} KG ·{' '}
                   {t.stockCategory?.replace(/_/g, ' ')}
                 </p>
               </div>
@@ -129,13 +129,13 @@ export default function TransfersPage() {
                 value={form.sourceLocationId}
                 onChange={(v) => setForm((f) => ({ ...f, sourceLocationId: v }))}
                 placeholder="Source plant *"
-                options={[{ value: '', label: 'All plants' }, ...(locations || []).map((l: any) => ({ value: l.id, label: l.name }))]}
+                options={(locations || []).map((l: any) => ({ value: l.id, label: l.name }))}
               />
               <EmsSelect
                 value={form.destLocationId}
                 onChange={(v) => setForm((f) => ({ ...f, destLocationId: v }))}
                 placeholder="Destination plant *"
-                options={[{ value: '', label: 'All plants' }, ...(locations || []).map((l: any) => ({ value: l.id, label: l.name }))]}
+                options={(locations || []).map((l: any) => ({ value: l.id, label: l.name }))}
               />
               <EmsSelect
                 value={form.stockCategory}
@@ -151,7 +151,7 @@ export default function TransfersPage() {
                 value={form.productId}
                 onChange={(v) => setForm((f) => ({ ...f, productId: v }))}
                 placeholder="Product *"
-                options={[{ value: '', label: 'All products' }, ...(products || []).map((p: any) => ({ value: p.id, label: `${p.code} — ${p.name}` }))]}
+                options={(products || []).map((p: any) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
                 searchable
               />
               <div className="flex gap-2">
@@ -168,8 +168,8 @@ export default function TransfersPage() {
                   onChange={(v) => setForm((f) => ({ ...f, unit: v }))}
                   placeholder="Unit"
                   options={[
-                    { value: 'MT', label: 'MT' },
                     { value: 'KG', label: 'KG' },
+                    { value: 'MT', label: 'MT' },
                   ]}
                 />
               </div>

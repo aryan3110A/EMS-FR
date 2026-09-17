@@ -111,7 +111,7 @@ export default function SamplingPage() {
             <tr>
               <th>Lot</th>
               <th>Product</th>
-              <th>Qty MT</th>
+              <th>Qty KG</th>
               <th>Location</th>
               <th>Status</th>
             </tr>
@@ -121,7 +121,7 @@ export default function SamplingPage() {
               <tr key={r.id}>
                 <td>{r.lotNumber || r.id.slice(0, 8)}</td>
                 <td>{r.product?.name}</td>
-                <td>{formatNumber((r.remainingKg ?? r.quantityKg) / 1000, 3)}</td>
+                <td>{formatNumber(r.remainingKg ?? r.quantityKg ?? 0, 0)}</td>
                 <td>{r.location?.name}</td>
                 <td>{r.status || 'AVAILABLE'}</td>
               </tr>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ProductionShell, PRODUCTION_CACHE_TTL } from '@/components/production/production-shell';
 import { EmsSelect } from '@/components/ui/ems-select';
 import { api } from '@/lib/api';
@@ -9,44 +9,76 @@ import { invalidateQueryCache, useCachedQuery } from '@/lib/use-cached-query';
 import { formatNumber } from '@/lib/utils';
 
 export default function FulfilmentPage() {
-  const [form, setForm] = useState({
-    processedLotId: '',
-    contractId: '',
-    containerId: '',
-    productId: '',
-    containerProductId: '',
-    quantity: 0,
-    unit: 'MT',
-  });
+  const [productId, setProductId] = useState('');
+  const [locationId, setLocationId] = useState('');
+  const [selectedKey, setSelectedKey] = useState('');
+  const [quantityKg, setQuantityKg] = useState(0);
   const [saving, setSaving] = useState(false);
 
-  const { data: pending, refresh: refreshPending } = useCachedQuery(
-    'production:pending-contracts',
-    () => api.production.pendingContracts(),
-    { ttl: PRODUCTION_CACHE_TTL },
+  const { data: products } = useCachedQuery('masters:products', () => api.masters.products(), {
+    ttl: PRODUCTION_CACHE_TTL,
+  });
+  const { data: stock, refresh: refreshStock } = useCachedQuery(
+    productId ? `fulfilment:stock:${productId}:${locationId || 'all'}` : 'fulfilment:stock:none',
+    () => (productId ? api.production.fulfilmentStock(productId, locationId || undefined) : Promise.resolve(null)),
+    { ttl: 30_000, enabled: !!productId },
   );
-  const { data: allLots, refresh: refreshLots } = useCachedQuery(
-    'production:processed-lots',
-    () => api.production.processedLots(),
-    { ttl: PRODUCTION_CACHE_TTL },
+  const { data: matching, refresh: refreshMatching } = useCachedQuery(
+    productId ? `fulfilment:match:${productId}` : 'fulfilment:match:none',
+    () => (productId ? api.production.matchingContainers(productId) : Promise.resolve([])),
+    { ttl: 30_000, enabled: !!productId },
   );
-  const lots = (allLots || []).filter((x: any) => Number(x.availableKg ?? x.remainingKg ?? x.quantityKg ?? 0) > 0.001);
 
-  const contract = (pending || []).find((c: any) => c.id === form.contractId);
-  const container = contract?.containers?.find((ct: any) => ct.id === form.containerId);
+  useEffect(() => {
+    setSelectedKey('');
+    setQuantityKg(0);
+    if (!locationId && stock?.byLocation?.length === 1) {
+      setLocationId(stock.byLocation[0].locationId);
+    }
+  }, [productId, stock?.byLocation]);
+
+  const selected = useMemo(() => {
+    if (!selectedKey) return null;
+    return (matching || []).find(
+      (m: any) => `${m.contractId}:${m.containerId}:${m.productLines?.[0]?.id || ''}` === selectedKey,
+    );
+  }, [matching, selectedKey]);
+
+  const availableAtLocation = useMemo(() => {
+    if (!stock) return 0;
+    if (locationId) {
+      return stock.byLocation?.find((l: any) => l.locationId === locationId)?.availableKg || 0;
+    }
+    return stock.totalAvailableKg || 0;
+  }, [stock, locationId]);
 
   async function submit() {
+    if (!productId || !locationId || !selected || !quantityKg) {
+      showError('Select product, location, container and quantity');
+      return;
+    }
+    const line = selected.productLines?.[0];
+    const max = Math.min(availableAtLocation, line?.pendingKg || 0);
+    if (quantityKg > max + 0.001) {
+      showError(`Maximum allocation: ${formatNumber(max, 0)} KG`);
+      return;
+    }
     setSaving(true);
     try {
-      await api.production.allocateFromStock({
-        ...form,
-        quantity: Number(form.quantity),
-        containerProductId: form.containerProductId || undefined,
+      await api.production.fulfilmentAllocate({
+        productId,
+        locationId,
+        contractId: selected.contractId,
+        containerId: selected.containerId,
+        containerProductId: line?.id || undefined,
+        quantityKg: Number(quantityKg),
       });
-      showSuccess('Allocated from processed stock');
-      setForm({ processedLotId: '', contractId: '', containerId: '', productId: '', containerProductId: '', quantity: 0, unit: 'MT' });
+      showSuccess('Allocated from processed inventory (FIFO)');
+      setQuantityKg(0);
+      setSelectedKey('');
       invalidateQueryCache('production:');
-      await Promise.all([refreshPending(), refreshLots()]);
+      invalidateQueryCache('fulfilment:');
+      await Promise.all([refreshStock(), refreshMatching()]);
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Fulfilment failed');
     } finally {
@@ -55,107 +87,116 @@ export default function FulfilmentPage() {
   }
 
   return (
-    <ProductionShell title="Fulfilment from Stock" subtitle="Allocate existing processed lots to containers">
-      <div className="ems-card mb-4 p-4">
-        <h3 className="mb-3 font-semibold">Allocate from processed inventory</h3>
-        <div className="grid gap-2 sm:grid-cols-2">
+    <ProductionShell
+      title="Fulfilment"
+      subtitle="Select processed product → matching contracts only → allocate (FIFO lots)"
+    >
+      <div className="ems-card mb-4 space-y-4 p-4">
+        <div>
+          <label className="ems-label">1. Processed Product</label>
           <EmsSelect
-            value={form.processedLotId}
-            onChange={(v) => setForm((f) => ({ ...f, processedLotId: v }))}
-            placeholder="Processed lot *"
+            value={productId}
+            onChange={(v) => {
+              setProductId(v);
+              setLocationId('');
+            }}
+            placeholder="Select product *"
             options={[
-              { value: '', label: 'All lots' },
-              ...lots.map((l) => ({
-                value: l.id,
-                label: `${l.lotNumber || l.id.slice(0, 8)} · ${l.product?.name || ''} · ${formatNumber((l.remainingKg ?? l.quantityKg) / 1000, 3)} MT`,
-              })),
+              { value: '', label: 'Select product' },
+              ...(products || []).map((p: any) => ({ value: p.id, label: `${p.code} — ${p.name}` })),
             ]}
             searchable
           />
-          <select
-            className="ems-input"
-            value={form.contractId}
-            onChange={(e) => setForm((f) => ({ ...f, contractId: e.target.value, containerId: '', productId: '', containerProductId: '' }))}
-          >
-            <option value="">Contract</option>
-            {(pending || []).map((c: any) => (
-              <option key={c.id} value={c.id}>
-                {c.contractNumber} — {c.buyer?.name}
-              </option>
-            ))}
-          </select>
-          <select
-            className="ems-input"
-            value={form.containerId}
-            onChange={(e) => setForm((f) => ({ ...f, containerId: e.target.value, productId: '', containerProductId: '' }))}
-          >
-            <option value="">Container</option>
-            {(contract?.containers || []).map((ct: any) => (
-              <option key={ct.id} value={ct.id}>
-                Container {ct.containerIndex} · pending {formatNumber(ct.pendingMt, 3)} MT
-              </option>
-            ))}
-          </select>
-          <select
-            className="ems-input"
-            value={form.containerProductId || form.productId}
-            onChange={(e) => {
-              const line = container?.productLines?.find((p: any) => (p.id || p.productId) === e.target.value);
-              setForm((f) => ({ ...f, productId: line?.productId || '', containerProductId: line?.id || '' }));
-            }}
-          >
-            <option value="">Product line</option>
-            {(container?.productLines || []).map((p: any) => (
-              <option key={p.id || p.productId} value={p.id || p.productId}>
-                {p.product?.name || p.productId} · pending {formatNumber(p.pendingKg / 1000, 3)} MT
-              </option>
-            ))}
-          </select>
-          <input
-            className="ems-input"
-            type="number"
-            step="0.001"
-            placeholder="Quantity MT"
-            value={form.quantity || ''}
-            onChange={(e) => setForm((f) => ({ ...f, quantity: Number(e.target.value), unit: 'MT' }))}
-          />
         </div>
-        <button type="button" className="ems-btn-primary mt-3 text-sm" disabled={saving} onClick={submit}>
-          {saving ? 'Allocating…' : 'Allocate to Container'}
-        </button>
-      </div>
 
-      <div className="ems-card p-4">
-        <h3 className="mb-3 font-semibold">Available processed lots</h3>
-        <table className="ems-table w-full text-sm">
-          <thead>
-            <tr>
-              <th>Lot</th>
-              <th>Product</th>
-              <th>Plant</th>
-              <th>Remaining MT</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lots.map((l) => (
-              <tr key={l.id}>
-                <td>{l.lotNumber || l.id.slice(0, 8)}</td>
-                <td>{l.product?.name}</td>
-                <td>{l.location?.name || l.plant?.name}</td>
-                <td>{formatNumber((l.remainingKg ?? l.quantityKg) / 1000, 3)}</td>
-                <td>{l.status || 'AVAILABLE'}</td>
-              </tr>
-            ))}
-            {!lots.length && (
-              <tr>
-                <td colSpan={5} className="text-slate-400">
-                  No processed stock available
-                </td>
-              </tr>
+        {productId && stock && (
+          <div>
+            <p className="ems-label">2. Processed Stock</p>
+            <p className="mb-2 text-lg font-semibold text-slate-800">
+              Available: {formatNumber(stock.totalAvailableKg || 0, 0)} KG
+            </p>
+            <div className="mb-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {(stock.byLocation || []).map((l: any) => (
+                <button
+                  key={l.locationId}
+                  type="button"
+                  onClick={() => setLocationId(l.locationId)}
+                  className={`rounded-lg border p-3 text-left text-sm ${
+                    locationId === l.locationId ? 'border-blue-500 bg-blue-50' : 'border-slate-200'
+                  }`}
+                >
+                  <p className="font-medium">{l.locationName}</p>
+                  <p className="tabular-nums">{formatNumber(l.availableKg, 0)} KG</p>
+                </button>
+              ))}
+            </div>
+            {!stock.byLocation?.length && (
+              <p className="text-sm text-slate-500">No available processed stock for this product.</p>
             )}
-          </tbody>
-        </table>
+          </div>
+        )}
+
+        {productId && (
+          <div>
+            <p className="ems-label">3. Matching Contracts / Containers</p>
+            <p className="mb-2 text-xs text-slate-500">Only containers requiring this exact product are shown.</p>
+            <div className="max-h-72 space-y-2 overflow-y-auto">
+              {(matching || []).map((m: any) => {
+                const line = m.productLines?.[0];
+                const key = `${m.contractId}:${m.containerId}:${line?.id || ''}`;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedKey(key)}
+                    className={`w-full rounded-lg border p-3 text-left text-sm ${
+                      selectedKey === key ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <span className="font-medium">
+                        {m.contractNumber} · C{m.containerIndex}
+                      </span>
+                      <span className="text-slate-500">{m.euClassification}</span>
+                    </div>
+                    <p className="text-slate-600">
+                      {m.buyer?.name || '—'} · Pending {formatNumber(line?.pendingKg || 0, 0)} KG
+                      {m.expectedShipmentDate ? ` · Due ${String(m.expectedShipmentDate).slice(0, 10)}` : ''}
+                    </p>
+                  </button>
+                );
+              })}
+              {!matching?.length && (
+                <p className="text-sm text-slate-400">No pending containers require this product.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {selected && locationId && (
+          <div>
+            <label className="ems-label">4. Quantity to fulfil (KG)</label>
+            <p className="mb-1 text-xs text-slate-500">
+              Max {formatNumber(Math.min(availableAtLocation, selected.productLines?.[0]?.pendingKg || 0), 0)} KG
+              (stock vs pending). Lots consumed automatically FIFO.
+            </p>
+            <input
+              className="ems-input w-full max-w-xs"
+              type="number"
+              step="0.001"
+              value={quantityKg || ''}
+              onChange={(e) => setQuantityKg(Number(e.target.value))}
+            />
+            <button
+              type="button"
+              className="ems-btn-primary mt-3 text-sm"
+              disabled={saving}
+              onClick={submit}
+            >
+              {saving ? 'Allocating…' : 'Allocate'}
+            </button>
+          </div>
+        )}
       </div>
     </ProductionShell>
   );

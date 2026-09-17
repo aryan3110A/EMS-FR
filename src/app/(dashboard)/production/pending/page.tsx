@@ -43,13 +43,13 @@ export default function PendingContractsPage() {
               </div>
               <div className="mt-3 grid gap-2 text-sm sm:grid-cols-4">
                 <div>
-                  Required: <strong>{formatNumber(c.requiredMt, 3)} MT</strong>
+                  Required: <strong>{formatNumber((c.requiredMt || 0) * 1000, 0)} KG</strong>
                 </div>
                 <div>
-                  Fulfilled: <strong>{formatNumber(c.fulfilledMt, 3)} MT</strong>
+                  Fulfilled: <strong>{formatNumber((c.fulfilledMt || 0) * 1000, 0)} KG</strong>
                 </div>
                 <div>
-                  Pending: <strong>{formatNumber(c.pendingMt, 3)} MT</strong>
+                  Pending: <strong>{formatNumber((c.pendingMt || 0) * 1000, 0)} KG</strong>
                 </div>
                 <div>
                   Containers: <strong>{c.containers?.length}</strong>

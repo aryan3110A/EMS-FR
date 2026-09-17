@@ -27,7 +27,7 @@ export default function InwardPage() {
     productId: '',
     numberOfBags: 0,
     weight: 0,
-    unit: 'MT',
+    unit: 'KG',
     price: '',
     inwardTypeId: '',
     otherTypeDesc: '',
@@ -147,7 +147,8 @@ export default function InwardPage() {
                 <td>{r.product?.name}</td>
                 <td>{r.truckNumber}</td>
                 <td>
-                  {formatNumber(r.weightKg / 1000, 3)} MT ({formatNumber(r.weightKg, 0)} kg)
+                  {formatNumber(r.weightKg, 0)} KG
+                  {r.numberOfBags ? ` · ${r.numberOfBags} bags` : ''}
                 </td>
                 <td>{r.location?.name}</td>
                 <td>{r.inwardType?.name}</td>
@@ -173,7 +174,7 @@ export default function InwardPage() {
                 value={form.supplierId}
                 onChange={(v) => setForm((f) => ({ ...f, supplierId: v }))}
                 placeholder="Party *"
-                options={[{ value: '', label: 'All parties' }, ...(suppliers || []).map((s: any) => ({ value: s.id, label: s.name }))]}
+                options={(suppliers || []).map((s: any) => ({ value: s.id, label: s.name }))}
               />
               <input className="ems-input w-full" type="date" value={form.inwardDate} onChange={(e) => setForm((f) => ({ ...f, inwardDate: e.target.value }))} />
               <input className="ems-input w-full" placeholder="Truck number *" value={form.truckNumber} onChange={(e) => setForm((f) => ({ ...f, truckNumber: e.target.value }))} />
@@ -181,19 +182,19 @@ export default function InwardPage() {
                 value={form.productId}
                 onChange={(v) => setForm((f) => ({ ...f, productId: v }))}
                 placeholder="Product *"
-                options={[{ value: '', label: 'All products' }, ...(products || []).map((p: any) => ({ value: p.id, label: `${p.code} — ${p.name}` }))]}
+                options={(products || []).map((p: any) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
                 searchable
               />
               <div className="flex gap-2">
                 <input className="ems-input w-full" type="number" placeholder="Bags" value={form.numberOfBags} onChange={(e) => setForm((f) => ({ ...f, numberOfBags: Number(e.target.value) }))} />
                 <input className="ems-input w-full" type="number" step="0.001" placeholder="Weight *" value={form.weight || ''} onChange={(e) => setForm((f) => ({ ...f, weight: Number(e.target.value) }))} />
-                <EmsSelect value={form.unit} onChange={(v) => setForm((f) => ({ ...f, unit: v }))} placeholder="Unit" options={[{ value: 'MT', label: 'MT' }, { value: 'KG', label: 'KG' }]} />
+                <EmsSelect value={form.unit} onChange={(v) => setForm((f) => ({ ...f, unit: v }))} placeholder="Unit" options={[{ value: 'KG', label: 'KG' }, { value: 'MT', label: 'MT' }]} />
               </div>
               <EmsSelect
                 value={form.inwardTypeId}
                 onChange={(v) => setForm((f) => ({ ...f, inwardTypeId: v }))}
                 placeholder="Inward type *"
-                options={[{ value: '', label: 'All types' }, ...(types || []).map((t: any) => ({ value: t.id, label: t.name }))]}
+                options={(types || []).map((t: any) => ({ value: t.id, label: t.name }))}
               />
               {selectedType?.requiresDesc && (
                 <input className="ems-input w-full" placeholder="Specify other type *" value={form.otherTypeDesc} onChange={(e) => setForm((f) => ({ ...f, otherTypeDesc: e.target.value }))} />
@@ -202,7 +203,7 @@ export default function InwardPage() {
                 value={form.locationId}
                 onChange={(v) => setForm((f) => ({ ...f, locationId: v }))}
                 placeholder="Receiving location *"
-                options={[{ value: '', label: 'All locations' }, ...(locations || []).map((l: any) => ({ value: l.id, label: l.name }))]}
+                options={(locations || []).map((l: any) => ({ value: l.id, label: l.name }))}
               />
               <input className="ems-input w-full" type="number" placeholder="Price (optional)" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} />
               <textarea className="ems-input w-full min-h-[60px]" placeholder="Remarks" value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} />

@@ -32,11 +32,11 @@ export default function ProductionDashboardPage() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {[
-              ['Raw Material (kg)', data?.inventory?.totalRaw],
-              ['Processed (kg)', data?.inventory?.totalProcessed],
-              ['WIP (kg)', data?.inventory?.totalWip],
-              ['Sample Rejected (kg)', data?.inventory?.totalRejected],
-              ['In Transit (kg)', data?.inventory?.totalInTransit],
+              ['Raw Material (KG)', data?.inventory?.totalRaw],
+              ['Processed (KG)', data?.inventory?.totalProcessed],
+              ['WIP (KG)', data?.inventory?.totalWip],
+              ['Wastage Inv (KG)', data?.inventory?.totalWastageInventory],
+              ['Sample Rejected (KG)', data?.inventory?.totalRejected],
             ].map(([label, value]) => (
               <div key={String(label)} className="ems-card p-4">
                 <p className="text-xs font-semibold text-slate-500">{label}</p>
@@ -44,6 +44,40 @@ export default function ProductionDashboardPage() {
               </div>
             ))}
           </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {[
+              ['Active Job Works', data?.jobWork?.activeJobWorks, '/production/job-work'],
+              ['Material with JW (KG)', data?.jobWork?.materialWithJobWorkersKg, '/production/job-work'],
+              ['JW Processed MTD (KG)', data?.jobWork?.jobWorkProcessedThisMonthKg, '/production/job-work'],
+              [
+                'JW Received MTD (KG)',
+                data?.jobWork?.jobWorkMaterialReceivedKg ?? data?.jobWork?.jobWorkProcessedThisMonthKg,
+                '/production/job-work',
+              ],
+              ['JW Pending Return (KG)', data?.jobWork?.jobWorkPendingReturnKg, '/production/job-work'],
+              ['Sampling required', data?.samplingRequiredCount, '/production/sampling'],
+            ].map(([label, value, href]) => (
+              <Link key={String(label)} href={String(href)} className="ems-card block p-4 hover:border-blue-300">
+                <p className="text-xs font-semibold text-slate-500">{label}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-800">{formatNumber(Number(value || 0), 0)}</p>
+              </Link>
+            ))}
+          </div>
+
+          {(data?.productionSourceThisMonth || []).length > 0 && (
+            <div className="ems-card mt-4 p-4">
+              <h3 className="mb-2 font-semibold">Production source this month (KG)</h3>
+              <ul className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                {(data.productionSourceThisMonth || []).map((s: any) => (
+                  <li key={s.source} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                    <span>{String(s.source || '').replace(/_/g, ' ')}</span>
+                    <span className="font-medium">{formatNumber(s.quantityKg, 0)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div className="ems-card p-4">
@@ -63,10 +97,10 @@ export default function ProductionDashboardPage() {
               <ul className="mt-2 space-y-1 text-sm">
                 {(data?.production?.completedToday || []).map((r: any) => (
                   <li key={r.productionNumber}>
-                    {r.productionNumber}: {r.product} · {formatNumber(r.netOutputKg / 1000, 3)} MT @ {r.plant}
+                    {r.productionNumber}: {r.product} · {formatNumber(r.netOutputKg, 0)} KG @ {r.plant}
                   </li>
                 ))}
-                {!data?.production?.completedToday?.length && <li className="text-slate-400">No hulling finalized today</li>}
+                {!data?.production?.completedToday?.length && <li className="text-slate-400">No runs completed today</li>}
               </ul>
             </div>
           </div>
@@ -113,7 +147,7 @@ export default function ProductionDashboardPage() {
                 {Object.entries(data?.inventory?.byLocation || {}).map(([name, kg]) => (
                   <li key={name} className="flex justify-between">
                     <span>{name}</span>
-                    <span className="font-medium">{formatNumber(Number(kg) / 1000, 3)} MT</span>
+                    <span className="font-medium">{formatNumber(Number(kg), 0)} KG</span>
                   </li>
                 ))}
                 {!Object.keys(data?.inventory?.byLocation || {}).length && (
