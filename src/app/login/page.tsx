@@ -8,8 +8,8 @@ import { showError } from '@/lib/toast';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('sales@ems.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -56,22 +56,30 @@ export default function LoginPage() {
 
           <div>
             <label className="ems-label">Email</label>
-            <input className="ems-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input
+              className="ems-input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@company.com"
+              required
+            />
           </div>
           <div>
             <label className="ems-label">Password</label>
-            <input className="ems-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input
+              className="ems-input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+            />
           </div>
           <button type="submit" disabled={loading} className="ems-btn-primary w-full py-3">
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
-
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
-          <p className="mb-2 font-semibold text-slate-700">Demo credentials</p>
-          <p className="font-mono text-slate-600">sales@ems.com / admin123</p>
-          <p className="font-mono text-slate-600">admin@ems.com / admin123</p>
-        </div>
       </div>
     </div>
   );
