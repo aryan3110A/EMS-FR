@@ -47,7 +47,7 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-slate-500">Sign in to manage contracts</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="ems-card space-y-5 p-6">
+        <form onSubmit={handleSubmit} autoComplete="off" className="ems-card space-y-5 p-6">
           <h2 className="text-lg font-semibold text-slate-800">Sign in</h2>
 
           {error && (
@@ -59,9 +59,12 @@ export default function LoginPage() {
             <input
               className="ems-input"
               type="email"
+              name="ems_user_email"
+              id="ems_user_email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com"
+              autoComplete="off"
               required
             />
           </div>
@@ -70,9 +73,12 @@ export default function LoginPage() {
             <input
               className="ems-input"
               type="password"
+              name="ems_user_password"
+              id="ems_user_password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              autoComplete="new-password"
               required
             />
           </div>
