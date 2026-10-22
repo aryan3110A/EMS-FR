@@ -61,18 +61,42 @@ export default function TransfersPage() {
     }
   }
 
+  const currentUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+  const userOffice = (currentUser.office?.name || currentUser.officeName || '').toLowerCase();
+
+  const incomingTransfers = (rows || []).filter((t: any) => {
+    const destName = (t.destLocation?.name || '').toLowerCase();
+    const isDest = userOffice && (destName.includes(userOffice) || userOffice.includes(destName));
+    return isDest && ['IN_TRANSIT', 'DISPATCHED'].includes(t.status);
+  });
+
   async function receive(id: string) {
+    if (!window.confirm('Accept this transfer into your plant inventory? An automatic Inward entry will be created.')) {
+      return;
+    }
     try {
       await api.production.receiveTransfer(id);
-      showSuccess('Received at destination');
+      showSuccess('Transfer accepted — automatic Inward created at destination plant');
       await afterMutation();
     } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Receive failed');
+      showError(e instanceof Error ? e.message : 'Accept transfer failed');
     }
   }
 
   return (
-    <ProductionShell title="Plant Transfer" subtitle="Move stock between plants with dispatch / receive">
+    <ProductionShell title="Plant Transfer" subtitle="Move stock between plants with dispatch / acceptance">
+      {incomingTransfers.length > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-blue-600 animate-pulse" />
+            <span className="font-semibold">
+              {incomingTransfers.length} Incoming {incomingTransfers.length === 1 ? 'Transfer' : 'Transfers'} Awaiting Acceptance
+            </span>
+          </div>
+          <p className="text-xs text-blue-700">Please verify physical arrival and click &ldquo;Accept Transfer&rdquo; to intake stock.</p>
+        </div>
+      )}
+
       <div className="mb-4 flex justify-end">
         <button type="button" className="ems-btn-primary text-sm" onClick={() => setOpen(true)}>
           + New Transfer
@@ -103,7 +127,7 @@ export default function TransfersPage() {
                   ) : null}
                   {t.status === 'IN_TRANSIT' || t.status === 'DISPATCHED' ? (
                     <button type="button" className="ems-btn-primary text-xs" onClick={() => receive(t.id)}>
-                      Receive
+                      Accept Transfer
                     </button>
                   ) : null}
                 </div>

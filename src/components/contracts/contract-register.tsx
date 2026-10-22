@@ -73,6 +73,39 @@ function resolveContainers(contract: Contract): ContractContainer[] {
   }));
 }
 
+export function DueDateBadge({ dateStr }: { dateStr?: string | null }) {
+  if (!dateStr) return null;
+  const target = new Date(dateStr);
+  if (isNaN(target.getTime())) return null;
+  const now = new Date();
+  const dTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+  const dNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const diffDays = Math.round((dTarget - dNow) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    const overdueDays = Math.abs(diffDays);
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
+        Overdue by {overdueDays}d
+      </span>
+    );
+  } else if (diffDays <= 7) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+        Due in {diffDays}d
+      </span>
+    );
+  } else {
+    return (
+      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
+        Due {formatDate(dateStr)} ({diffDays}d)
+      </span>
+    );
+  }
+}
+
 function DetailItem({
   label,
   value,
@@ -95,10 +128,13 @@ function DetailItem({
 function ContainerPanel({ container }: { container: ContractContainer }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <p className="mb-3 text-sm font-semibold text-slate-800">
-        Container {container.containerIndex}
-        {container.quantityMt != null ? ` · ${container.quantityMt} MT` : ''}
-      </p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-slate-800">
+          Container {container.containerIndex}
+          {container.quantityMt != null ? ` · ${container.quantityMt} MT` : ''}
+        </p>
+        <DueDateBadge dateStr={container.expectedShipmentDate} />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <DetailItem
           label="Product"
@@ -113,7 +149,12 @@ function ContainerPanel({ container }: { container: ContractContainer }) {
         <DetailItem label="Quantity (MT)" value={container.quantityMt} />
         <DetailItem label="Container No." value={container.containerNo ?? 'Pending'} />
         <DetailItem label="Destination Port" value={container.destinationPort?.name} />
-        <DetailItem label="Expected Shipment" value={formatDate(container.expectedShipmentDate)} />
+        <DetailItem label="Expected Shipment">
+          <div className="flex flex-col gap-1">
+            <span>{formatDate(container.expectedShipmentDate)}</span>
+            <DueDateBadge dateStr={container.expectedShipmentDate} />
+          </div>
+        </DetailItem>
         <DetailItem label="Shipment Month" value={container.shipmentMonth} />
         <DetailItem
           label="Shipment Half"
@@ -183,6 +224,16 @@ function ContractCard({ contract }: { contract: Contract }) {
         <DetailItem label="Remaining Payment" value={formatNumber(pay.remaining, 0)} />
         <DetailItem label="Port" value={contract.destinationPort?.name} />
         <DetailItem label="Shipment" value={contract.shipmentMonth} />
+        <DetailItem label="Due Date">
+          <div className="mt-0.5">
+            <DueDateBadge
+              dateStr={
+                containers.map((c) => c.expectedShipmentDate).filter(Boolean).sort()[0] ||
+                (contract as any).expectedShipmentDate
+              }
+            />
+          </div>
+        </DetailItem>
         <div>
           <p className="text-xs font-medium text-slate-500">Status</p>
           <span

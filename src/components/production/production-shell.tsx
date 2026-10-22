@@ -17,7 +17,7 @@ const TABS = [
   { href: '/production/dashboard', label: 'Dashboard' },
   { href: '/production/inward', label: 'Inward' },
   { href: '/production/pending', label: 'Pending' },
-  { href: '/production/runs', label: 'Runs' },
+  { href: '/production/runs', label: 'Production' },
   { href: '/production/job-work', label: 'Job Work' },
   { href: '/production/fulfilment', label: 'Fulfilment' },
   { href: '/production/sampling', label: 'Sampling' },

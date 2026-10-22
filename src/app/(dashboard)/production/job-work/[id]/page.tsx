@@ -27,11 +27,6 @@ export default function JobWorkDetailPage() {
     truckNumber: '',
     lines: [{ returnCategory: 'PROCESSED', wastageTypeId: '', quantity: 0 }],
   });
-  const [resultOpen, setResultOpen] = useState(false);
-  const [cleanQty, setCleanQty] = useState<Record<string, number>>({});
-  const [hullQty, setHullQty] = useState<Record<string, number>>({});
-  const [disp, setDisp] = useState<Record<string, string>>({});
-  const [processedInput, setProcessedInput] = useState(0);
 
   const { data: locations } = useCachedQuery('production:locations', () => api.production.locations(), {
     ttl: PRODUCTION_CACHE_TTL,
@@ -46,7 +41,6 @@ export default function JobWorkDetailPage() {
   async function load() {
     const data = await api.production.jobWork.get(id);
     setJw(data);
-    setProcessedInput(data.totalSentKg || 0);
   }
 
   useEffect(() => {
@@ -97,35 +91,6 @@ export default function JobWorkDetailPage() {
     }
   }
 
-  async function submitResult() {
-    const cleaningLines = (cleaningTypes || [])
-      .map((t: any) => ({ wastageTypeId: t.id, quantity: cleanQty[t.id] || 0, unit: 'KG' }))
-      .filter((l: any) => l.quantity > 0);
-    const hullingLines =
-      jw.processType === 'FULL_PROCESS'
-        ? (hullingTypes || [])
-            .map((t: any) => ({ wastageTypeId: t.id, quantity: hullQty[t.id] || 0, unit: 'KG' }))
-            .filter((l: any) => l.quantity > 0)
-        : [];
-    const all = [...cleaningLines, ...hullingLines];
-    const dispositions = all.map((l) => ({
-      wastageTypeId: l.wastageTypeId,
-      action: disp[l.wastageTypeId] || 'RETURNED',
-    }));
-    try {
-      await api.production.jobWork.processResult(id, {
-        totalProcessedInputKg: Number(processedInput),
-        cleaningLines,
-        hullingLines,
-        dispositions,
-      });
-      showSuccess('Process result saved');
-      setResultOpen(false);
-      await load();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Process result failed');
-    }
-  }
 
   async function reopenJw() {
     const reason = window.prompt('Admin correction reason to reopen this closed Job Work:');
@@ -208,18 +173,52 @@ export default function JobWorkDetailPage() {
       </div>
 
       <div className="ems-card mb-4 p-4">
-        <h3 className="mb-2 font-semibold">Reconciliation</h3>
-        <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-          <p>Total processed input: {formatNumber(jw.totalProcessedInputKg || recon.totalProcessedInputKg || 0, 0)} KG</p>
-          <p>Processed expected: {formatNumber(recon.processedOutputExpectedKg, 0)} KG</p>
-          <p>Processed received: {formatNumber(recon.processedOutputReceivedKg, 0)} KG</p>
-          <p>Wastage expected return: {formatNumber(recon.wastageExpectedReturnKg, 0)} KG</p>
-          <p>Wastage received: {formatNumber(recon.wastageReceivedKg, 0)} KG</p>
-          <p>Wastage discarded: {formatNumber(recon.wastageDiscardedKg, 0)} KG</p>
-          <p className={recon.flagged ? 'font-semibold text-rose-600' : ''}>
-            Diff: {formatNumber(recon.reconciliationDifferenceKg, 0)} KG
-            {jw.wastageAlert ? ` · Wastage ${jw.wastagePct ?? ''}%` : ''}
-          </p>
+        <h3 className="mb-3 font-semibold text-slate-800">Job Work Reconciliation</h3>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3">
+            <span className="text-xs font-semibold uppercase text-blue-700">1. Total Material Outward</span>
+            <p className="mt-1 text-xl font-bold text-blue-900">
+              {formatNumber(recon.totalMaterialOutwardKg ?? jw.totalSentKg ?? 0, 0)} KG
+            </p>
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3">
+            <span className="text-xs font-semibold uppercase text-emerald-700">2. Processed Received</span>
+            <p className="mt-1 text-xl font-bold text-emerald-900">
+              {formatNumber(recon.totalProcessedReceivedKg ?? recon.processedOutputReceivedKg ?? 0, 0)} KG
+            </p>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+            <span className="text-xs font-semibold uppercase text-amber-700">3. Wastage Received</span>
+            <p className="mt-1 text-xl font-bold text-amber-900">
+              {formatNumber(recon.totalWastageReceivedKg ?? recon.wastageReceivedKg ?? 0, 0)} KG
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <span className="text-xs font-semibold uppercase text-slate-600">Unprocessed Returned</span>
+            <p className="mt-1 text-xl font-bold text-slate-800">
+              {formatNumber(recon.unprocessedReturnedKg ?? 0, 0)} KG
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between border-t border-slate-100 pt-3 text-sm">
+          <div>
+            <span className="text-slate-500">Unreconciled Difference / Outside: </span>
+            <span
+              className={`font-bold ${
+                Math.abs(recon.differenceKg ?? recon.quantityStillOutsideKg ?? 0) > 0.001
+                  ? 'text-rose-600'
+                  : 'text-emerald-600'
+              }`}
+            >
+              {formatNumber(recon.differenceKg ?? recon.quantityStillOutsideKg ?? 0, 0)} KG
+            </span>
+          </div>
+          {recon.flagged && (
+            <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-700">
+              Discrepancy Flagged
+            </span>
+          )}
         </div>
       </div>
 
@@ -365,9 +364,6 @@ export default function JobWorkDetailPage() {
           </div>
 
           <div className="mb-4 flex flex-wrap gap-2">
-            <button type="button" className="ems-btn-secondary text-sm" onClick={() => setResultOpen(true)}>
-              Enter Process Result
-            </button>
             <button type="button" className="ems-btn-primary text-sm" onClick={closeJw}>
               Close Job Work
             </button>
@@ -378,75 +374,6 @@ export default function JobWorkDetailPage() {
             )}
           </div>
         </>
-      )}
-
-      {resultOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5">
-            <h3 className="mb-3 font-semibold">Job Work Process Result</h3>
-            <label className="ems-label">Total quantity processed (KG)</label>
-            <input
-              className="ems-input mb-3 w-full"
-              type="number"
-              value={processedInput || ''}
-              onChange={(e) => setProcessedInput(Number(e.target.value))}
-            />
-            <p className="mb-1 text-sm font-medium">Cleaning / Type 2–4</p>
-            {(cleaningTypes || []).map((t: any) => (
-              <div key={t.id} className="mb-2 flex gap-2">
-                <span className="w-28 text-sm">{t.nameEn}</span>
-                <input
-                  className="ems-input flex-1"
-                  type="number"
-                  placeholder="KG"
-                  value={cleanQty[t.id] || ''}
-                  onChange={(e) => setCleanQty((q) => ({ ...q, [t.id]: Number(e.target.value) }))}
-                />
-                <select
-                  className="ems-input"
-                  value={disp[t.id] || 'RETURNED'}
-                  onChange={(e) => setDisp((d) => ({ ...d, [t.id]: e.target.value }))}
-                >
-                  <option value="RETURNED">Returned</option>
-                  <option value="DISCARDED_AT_WORKER">Discarded at worker</option>
-                </select>
-              </div>
-            ))}
-            {jw.processType === 'FULL_PROCESS' && (
-              <>
-                <p className="mb-1 mt-3 text-sm font-medium">Hulling wastage</p>
-                {(hullingTypes || []).map((t: any) => (
-                  <div key={t.id} className="mb-2 flex gap-2">
-                    <span className="w-28 text-sm">{t.nameEn}</span>
-                    <input
-                      className="ems-input flex-1"
-                      type="number"
-                      placeholder="KG"
-                      value={hullQty[t.id] || ''}
-                      onChange={(e) => setHullQty((q) => ({ ...q, [t.id]: Number(e.target.value) }))}
-                    />
-                    <select
-                      className="ems-input"
-                      value={disp[t.id] || 'RETURNED'}
-                      onChange={(e) => setDisp((d) => ({ ...d, [t.id]: e.target.value }))}
-                    >
-                      <option value="RETURNED">Returned</option>
-                      <option value="DISCARDED_AT_WORKER">Discarded at worker</option>
-                    </select>
-                  </div>
-                ))}
-              </>
-            )}
-            <div className="mt-3 flex justify-end gap-2">
-              <button type="button" className="ems-btn-secondary text-sm" onClick={() => setResultOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" className="ems-btn-primary text-sm" onClick={submitResult}>
-                Save Result
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </ProductionShell>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ProductionShell, PRODUCTION_CACHE_TTL } from '@/components/production/production-shell';
 import { EmsSelect } from '@/components/ui/ems-select';
 import { api } from '@/lib/api';
@@ -69,6 +69,22 @@ export default function InwardPage() {
   });
 
   const selectedType = (types || []).find((t: any) => t.id === form.inwardTypeId);
+
+  const currentUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+  const userOffice = (currentUser.office?.name || currentUser.officeName || '').toLowerCase();
+  const isNedraUser = userOffice.includes('nedra');
+
+  useEffect(() => {
+    if (!locations?.length || form.locationId) return;
+    if (isNedraUser) {
+      const nedra = locations.find((l: any) => l.name?.toLowerCase().includes('nedra'));
+      if (nedra) setForm((f) => ({ ...f, locationId: nedra.id }));
+    } else {
+      const bhr = locations.find((l: any) => l.name?.toLowerCase().includes('bhramanwada'));
+      if (bhr) setForm((f) => ({ ...f, locationId: bhr.id }));
+      else if (locations[0]) setForm((f) => ({ ...f, locationId: locations[0].id }));
+    }
+  }, [locations, isNedraUser, form.locationId]);
 
   async function save() {
     setSaving(true);
@@ -199,12 +215,23 @@ export default function InwardPage() {
               {selectedType?.requiresDesc && (
                 <input className="ems-input w-full" placeholder="Specify other type *" value={form.otherTypeDesc} onChange={(e) => setForm((f) => ({ ...f, otherTypeDesc: e.target.value }))} />
               )}
-              <EmsSelect
-                value={form.locationId}
-                onChange={(v) => setForm((f) => ({ ...f, locationId: v }))}
-                placeholder="Receiving location *"
-                options={(locations || []).map((l: any) => ({ value: l.id, label: l.name }))}
-              />
+              <div>
+                <label className="ems-label flex items-center justify-between">
+                  <span>Receiving location *</span>
+                  {isNedraUser && (
+                    <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      🔒 Locked to Nedra Plant
+                    </span>
+                  )}
+                </label>
+                <EmsSelect
+                  value={form.locationId}
+                  onChange={(v) => !isNedraUser && setForm((f) => ({ ...f, locationId: v }))}
+                  placeholder="Receiving location *"
+                  disabled={isNedraUser}
+                  options={(locations || []).map((l: any) => ({ value: l.id, label: l.name }))}
+                />
+              </div>
               <input className="ems-input w-full" type="number" placeholder="Price (optional)" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} />
               <textarea className="ems-input w-full min-h-[60px]" placeholder="Remarks" value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} />
             </div>

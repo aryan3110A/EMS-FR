@@ -83,34 +83,51 @@ function ProductionRunsPage() {
     return rawAtPlant.find((r) => r.productId === form.productId)?.availableKg || 0;
   }, [rawAtPlant, form.productId, form.stockCategory, form.wastageLotId, form.rejectedLotId, wastageLots, rejectedLots]);
 
+  const currentUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+  const userOffice = (currentUser.office?.name || currentUser.officeName || '').toLowerCase();
+  const isNedraUser = userOffice.includes('nedra');
+
+  useEffect(() => {
+    if (!locations?.length || form.plantId) return;
+    if (isNedraUser) {
+      const nedraLoc = locations.find((l: any) => l.name?.toLowerCase().includes('nedra'));
+      if (nedraLoc) setForm((f) => ({ ...f, plantId: nedraLoc.id }));
+    } else {
+      const bhrLoc = locations.find((l: any) => l.name?.toLowerCase().includes('bhramanwada'));
+      if (bhrLoc) setForm((f) => ({ ...f, plantId: bhrLoc.id }));
+      else if (locations[0]) setForm((f) => ({ ...f, plantId: locations[0].id }));
+    }
+  }, [locations, isNedraUser, form.plantId]);
+
+  const isNaturalSesame = useMemo(() => {
+    if (!selectedProduct) return false;
+    const name = (selectedProduct.name || '').toLowerCase();
+    const code = (selectedProduct.code || '').toUpperCase();
+    return (code === 'NSS' || name.includes('natural sesame') || !!selectedProduct.allowsFullProcess) && !name.includes('hulled');
+  }, [selectedProduct]);
+
   const processOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = [];
+    const opts: { value: string; label: string }[] = [
+      { value: 'CLEANING', label: 'Cleaning' },
+    ];
     if (selectedProduct?.allowsSortex !== false) {
       opts.push({ value: 'SORTEX', label: 'Sortex' });
     }
-    if (selectedProduct?.allowsFullProcess !== false) {
-      opts.unshift({ value: 'FULL_PROCESS', label: 'Full Process' });
-    }
-    if (!opts.length) {
-      opts.push({ value: 'SORTEX', label: 'Sortex' });
+    if (isNaturalSesame) {
+      opts.push({ value: 'HULLING_SORTEX', label: 'Hulling + Sortex' });
     }
     return opts;
-  }, [selectedProduct]);
+  }, [selectedProduct, isNaturalSesame]);
 
   useEffect(() => {
     if (!selectedProduct) return;
-    if (form.processType === 'FULL_PROCESS' && selectedProduct.allowsFullProcess === false) {
+    if (form.processType === 'HULLING_SORTEX' && !isNaturalSesame) {
       setForm((f) => ({
         ...f,
-        processType: selectedProduct.allowsSortex === false ? 'FULL_PROCESS' : 'SORTEX',
-      }));
-    } else if (form.processType === 'SORTEX' && selectedProduct.allowsSortex === false) {
-      setForm((f) => ({
-        ...f,
-        processType: selectedProduct.allowsFullProcess === false ? 'SORTEX' : 'FULL_PROCESS',
+        processType: 'SORTEX',
       }));
     }
-  }, [selectedProduct, form.processType]);
+  }, [selectedProduct, isNaturalSesame, form.processType]);
 
   async function start() {
     if (!form.plantId || !form.productId || !form.quantity) {
@@ -173,10 +190,10 @@ function ProductionRunsPage() {
   }, [searchParams]);
 
   return (
-    <ProductionShell title="Production Runs" subtitle="In-House processing → Processed Inventory (fulfilment is separate)">
+    <ProductionShell title="Production" subtitle="In-House processing → Processed Inventory (fulfilment is separate)">
       <div className="mb-4 flex justify-end">
         <button type="button" className="ems-btn-primary text-sm" onClick={openNew}>
-          New Run
+          + New Production
         </button>
       </div>
       <div className="space-y-3">

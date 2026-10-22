@@ -103,6 +103,16 @@ export const api = {
       body: JSON.stringify(data),
     }),
   contractAudit: (id: string) => request<unknown[]>(`/contracts/${id}/audit`),
+  reviseQuantity: (id: string, data: { totalMt: number; reason?: string }) =>
+    request<Contract>(`/contracts/${id}/revise-quantity`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  cancelContract: (id: string, data?: { reason?: string }) =>
+    request<Contract>(`/contracts/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    }),
   allAudits: () => request<any[]>('/contracts/audit/all'),
   notifications: () =>
     request<{ id: string; message: string; contractId?: string; createdAt: string; readAt?: string | null }[]>(
@@ -219,6 +229,21 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data || {}),
       }),
+    mergeWastageLots: (data: { sourceLotIds: string[]; targetLotNumber?: string; remarks?: string }) =>
+      request<any>('/production/wastage-lots/merge', { method: 'POST', body: JSON.stringify(data) }),
+    recordWastageOutward: (data: {
+      wastageLotId: string;
+      quantityKg: number;
+      truckNumber: string;
+      driverName?: string;
+      buyerName?: string;
+      outwardDate: string;
+      remarks?: string;
+    }) => request<any>('/production/wastage-lots/outward', { method: 'POST', body: JSON.stringify(data) }),
+    wastageTruckReport: (params?: { year?: number; plantId?: string }) => {
+      const q = params ? '?' + new URLSearchParams(params as any).toString() : '';
+      return request<any[]>(`/production/wastage-lots/truck-report${q}`);
+    },
     pendingContracts: () => request<any[]>('/production/pending-contracts'),
     runs: () => request<any[]>('/production/runs'),
     run: (id: string) => request<any>(`/production/runs/${id}`),
@@ -226,12 +251,17 @@ export const api = {
       request<any>('/production/runs', { method: 'POST', body: JSON.stringify(data) }),
     addInput: (id: string, data: Record<string, unknown>) =>
       request<any>(`/production/runs/${id}/inputs`, { method: 'POST', body: JSON.stringify(data) }),
-    cleaning: (id: string, data: { lines: unknown[] }) =>
+    cleaning: (id: string, data: { actualCleanedOutputKg?: number; lines: unknown[] }) =>
       request<any>(`/production/runs/${id}/cleaning`, { method: 'POST', body: JSON.stringify(data) }),
-    hulling: (id: string, data: { lines: unknown[] }) =>
+    hulling: (id: string, data: { actualProcessedOutputKg?: number; lines: unknown[] }) =>
       request<any>(`/production/runs/${id}/hulling`, { method: 'POST', body: JSON.stringify(data) }),
-    finalise: (id: string, data: { dispositions: { wastageTypeId: string; action: string }[] }) =>
-      request<any>(`/production/runs/${id}/finalise`, { method: 'POST', body: JSON.stringify(data) }),
+    finalise: (
+      id: string,
+      data: {
+        dispositions?: { wastageTypeId: string; action: string }[];
+        directAllocations?: { contractId: string; containerId: string; quantityKg: number; remarks?: string }[];
+      },
+    ) => request<any>(`/production/runs/${id}/finalise`, { method: 'POST', body: JSON.stringify(data) }),
     allocateFromStock: (data: Record<string, unknown>) =>
       request<any>('/production/fulfilment/from-stock', { method: 'POST', body: JSON.stringify(data) }),
     fulfilmentStock: (productId?: string, locationId?: string) => {

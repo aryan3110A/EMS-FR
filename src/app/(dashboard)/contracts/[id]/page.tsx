@@ -11,11 +11,12 @@ import { AuditLogPanel } from '@/components/contracts/audit-log-panel';
 import { ContainerStatusUpdater } from '@/components/contracts/container-status-updater';
 import { api, ContractContainer } from '@/lib/api';
 import { useCachedQuery, invalidateQueryCache } from '@/lib/use-cached-query';
-import { showSuccess } from '@/lib/toast';
+import { showSuccess, showError } from '@/lib/toast';
+import { DueDateBadge } from '@/components/contracts/contract-register';
 import { BASIC_DATE_LABELS, CONTAINER_FIELD_LABELS } from '@/lib/contract-labels';
 import { commercialFieldVisibility } from '@/lib/commercial-calculations';
 import { formatDate, formatNumber, statusBadge, statusLabel } from '@/lib/utils';
-import { ArrowLeft, Pencil } from 'lucide-react';
+import { ArrowLeft, Pencil, Scale, XCircle } from 'lucide-react';
 
 function containerPrice(c: ContractContainer) {
   const term = (c.incoterm ?? 'FOB').toUpperCase();
@@ -89,30 +90,88 @@ export default function ContractDetailPage() {
         } as ContractContainer,
       ];
 
+  const currentUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+  const creatorId = (contract as any).createdById || contract.createdBy?.id;
+  const isCreator = currentUser.id === creatorId || currentUser.sub === creatorId;
+  const isAdmin = ['SUPER_ADMIN', 'OFFICE_ADMIN'].includes(currentUser.role);
+  const canReviseQty = (isCreator || isAdmin) && contract.status !== 'CANCELLED';
+  const canCancel = (isCreator || isAdmin) && contract.status !== 'CANCELLED' && contract.status !== 'COMPLETED';
+
+  const [reviseModalOpen, setReviseModalOpen] = useState(false);
+  const [reviseMt, setReviseMt] = useState<number>(contract.totalMt);
+  const [reviseReason, setReviseReason] = useState('');
+  const [revising, setRevising] = useState(false);
+
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleReviseQuantity = async () => {
+    if (!reviseMt || reviseMt <= 0) {
+      showError('Please enter a valid total MT');
+      return;
+    }
+    if (!reviseReason.trim()) {
+      showError('Reason for quantity revision is required');
+      return;
+    }
+    setRevising(true);
+    try {
+      await api.reviseQuantity(contract.id, {
+        totalMt: Number(reviseMt),
+        reason: reviseReason.trim(),
+      });
+      showSuccess('Contract quantity updated successfully');
+      setReviseModalOpen(false);
+      refreshContract();
+    } catch (e: any) {
+      showError(e?.message || 'Failed to revise quantity');
+    } finally {
+      setRevising(false);
+    }
+  };
+
+  const handleCancelContract = async () => {
+    if (!cancelReason.trim()) {
+      showError('Reason for contract cancellation is required');
+      return;
+    }
+    setCancelling(true);
+    try {
+      await api.cancelContract(contract.id, {
+        reason: cancelReason.trim(),
+      });
+      showSuccess('Contract cancelled successfully');
+      setCancelModalOpen(false);
+      refreshContract();
+    } catch (e: any) {
+      showError(e?.message || 'Failed to cancel contract');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const canEdit = (() => {
-    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
+    const user = currentUser;
     const hasEditRole = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM'].includes(user.role);
     if (!hasEditRole) return false;
-    const isAdmin = user.role === 'SUPER_ADMIN' || user.role === 'OFFICE_ADMIN';
-    if (isAdmin) return true;
+    const isAdm = user.role === 'SUPER_ADMIN' || user.role === 'OFFICE_ADMIN';
+    if (isAdm) return true;
     return ['DRAFT', 'UNDER_PREPARATION', 'AWAITING_SIGNED_CONTRACT'].includes(contract.status);
   })();
 
   const isOwner = (() => {
-    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
-    return ['SUPER_ADMIN', 'OFFICE_ADMIN'].includes(user.role);
+    return ['SUPER_ADMIN', 'OFFICE_ADMIN'].includes(currentUser.role);
   })();
 
   const canAmend = (c: ContractContainer) => {
     const vis = commercialFieldVisibility((c.incoterm ?? 'FOB') as 'FOB' | 'CIF' | 'CNF');
-    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
-    const roleOk = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'SUPER_SALES'].includes(user.role);
+    const roleOk = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'SUPER_SALES'].includes(currentUser.role);
     return vis.changeAmendment && roleOk;
   };
 
   const canUpdateContainerStatus = (() => {
-    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ems_user') || '{}') : {};
-    return ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'PRODUCTION_TEAM', 'SUPER_SALES'].includes(user.role);
+    return ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'PRODUCTION_TEAM', 'SUPER_SALES'].includes(currentUser.role);
   })();
 
   const refreshContract = () => {
@@ -126,11 +185,38 @@ export default function ContractDetailPage() {
         <Link href="/contracts" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
           <ArrowLeft className="h-4 w-4" /> Back to register
         </Link>
-        {canEdit && (
-          <Link href={`/contracts/${id}/edit`} className="ems-btn-secondary gap-1 text-sm">
-            <Pencil className="h-4 w-4" /> Edit Contract
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {canReviseQty && (
+            <button
+              type="button"
+              onClick={() => {
+                setReviseMt(contract.totalMt);
+                setReviseReason('');
+                setReviseModalOpen(true);
+              }}
+              className="ems-btn-secondary gap-1 text-sm"
+            >
+              <Scale className="h-4 w-4 text-blue-600" /> Revise Quantity
+            </button>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              onClick={() => {
+                setCancelReason('');
+                setCancelModalOpen(true);
+              }}
+              className="ems-btn-secondary gap-1 text-sm text-rose-600 hover:border-rose-300 hover:bg-rose-50"
+            >
+              <XCircle className="h-4 w-4 text-rose-600" /> Cancel Contract
+            </button>
+          )}
+          {canEdit && (
+            <Link href={`/contracts/${id}/edit`} className="ems-btn-secondary gap-1 text-sm">
+              <Pencil className="h-4 w-4" /> Edit Contract
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -218,7 +304,13 @@ export default function ContractDetailPage() {
                     <MiniField label="Specification" value={c.specification} />
                     <MiniField label={CONTAINER_FIELD_LABELS.allocatedMt} value={formatNumber(c.quantityMt, 3)} />
                     <MiniField label="Destination Port" value={c.destinationPort?.name} />
-                    <MiniField label={CONTAINER_FIELD_LABELS.expectedShipmentDate} value={formatDate(c.expectedShipmentDate)} />
+                    <div>
+                      <p className="text-xs text-slate-500">{CONTAINER_FIELD_LABELS.expectedShipmentDate}</p>
+                      <div className="flex flex-col gap-1 mt-0.5">
+                        <span className="text-sm font-medium text-slate-800">{formatDate(c.expectedShipmentDate)}</span>
+                        <DueDateBadge dateStr={c.expectedShipmentDate} />
+                      </div>
+                    </div>
                     <MiniField label={CONTAINER_FIELD_LABELS.shipmentPeriod} value={period} />
                     <MiniField label={CONTAINER_FIELD_LABELS.shippingContainerNo} value={c.containerNo ?? 'Pending'} />
                     <MiniField label="Factory Seal" value={c.factorySealNo ?? '—'} />
@@ -387,6 +479,103 @@ export default function ContractDetailPage() {
             window.location.reload();
           }}
         />
+      )}
+
+      {reviseModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h3 className="mb-2 text-lg font-semibold text-slate-800">Revise Contract Quantity</h3>
+            <p className="mb-4 text-xs text-slate-500">
+              Update total contracted metric tonnes. Cannot be reduced below fulfilled / allocated quantity.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="ems-label">Current Total (MT)</label>
+                <input className="ems-input w-full bg-slate-100" value={contract.totalMt} disabled />
+              </div>
+              <div>
+                <label className="ems-label">New Total (MT) *</label>
+                <input
+                  className="ems-input w-full"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={reviseMt || ''}
+                  onChange={(e) => setReviseMt(Number(e.target.value))}
+                  placeholder="e.g. 50"
+                />
+              </div>
+              <div>
+                <label className="ems-label">Reason for Revision *</label>
+                <textarea
+                  className="ems-input w-full min-h-[80px]"
+                  placeholder="Explain why contract quantity is being revised..."
+                  value={reviseReason}
+                  onChange={(e) => setReviseReason(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="ems-btn-secondary text-sm"
+                onClick={() => setReviseModalOpen(false)}
+                disabled={revising}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="ems-btn-primary text-sm"
+                onClick={handleReviseQuantity}
+                disabled={revising}
+              >
+                {revising ? 'Saving…' : 'Confirm Revision'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl border border-rose-200">
+            <h3 className="mb-2 text-lg font-semibold text-rose-800">Cancel Contract</h3>
+            <p className="mb-4 text-xs text-slate-600">
+              Are you sure you want to cancel Contract <span className="font-semibold">{contract.contractNumber}</span>? 
+              This action cannot be undone. Contracts with dispatched containers or active allocations cannot be cancelled.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="ems-label">Reason for Cancellation *</label>
+                <textarea
+                  className="ems-input w-full min-h-[80px]"
+                  placeholder="State the reason for contract cancellation..."
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="ems-btn-secondary text-sm"
+                onClick={() => setCancelModalOpen(false)}
+                disabled={cancelling}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
+                onClick={handleCancelContract}
+                disabled={cancelling}
+              >
+                {cancelling ? 'Cancelling…' : 'Confirm Cancellation'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </AppShell>
   );
