@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import type { Contract, ContractContainer } from '@/lib/api';
 import { formatDate, formatNumber, statusBadge, statusLabel } from '@/lib/utils';
 import { paymentRollup, productSummaryFromContainers } from '@/lib/contract-form-mapper';
@@ -185,7 +185,15 @@ function ContainerPanel({ container }: { container: ContractContainer }) {
   );
 }
 
-function ContractCard({ contract }: { contract: Contract }) {
+function ContractCard({
+  contract,
+  onDelete,
+  canDelete,
+}: {
+  contract: Contract;
+  onDelete?: (contract: Contract) => void;
+  canDelete?: boolean;
+}) {
   const [openContainerIndex, setOpenContainerIndex] = useState<number | null>(null);
   const containers = resolveContainers(contract);
   const showContainers = (contract.numberOfContainers ?? 0) > 0;
@@ -242,6 +250,27 @@ function ContractCard({ contract }: { contract: Contract }) {
             {statusLabel(contract.status)}
           </span>
         </div>
+        <div>
+          <p className="text-xs font-medium text-slate-500">Actions</p>
+          <div className="mt-1 flex items-center gap-2">
+            <Link
+              href={`/contracts/${contract.id}`}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800"
+            >
+              View
+            </Link>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete?.(contract)}
+                className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-0.5 text-xs font-semibold text-red-600 shadow-xs hover:bg-red-50 hover:border-red-300 transition-colors"
+                title="Delete this contract"
+              >
+                <Trash2 className="h-3 w-3" /> Delete
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {showContainers && (
@@ -285,7 +314,15 @@ function ContractCard({ contract }: { contract: Contract }) {
   );
 }
 
-function BuyerCard({ group }: { group: BuyerGroup }) {
+function BuyerCard({
+  group,
+  onDelete,
+  canDelete,
+}: {
+  group: BuyerGroup;
+  onDelete?: (contract: Contract) => void;
+  canDelete?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -311,7 +348,12 @@ function BuyerCard({ group }: { group: BuyerGroup }) {
       {expanded && (
         <div className="space-y-3 border-t border-slate-100 bg-slate-50/50 px-4 py-4">
           {group.contracts.map((contract) => (
-            <ContractCard key={contract.id} contract={contract} />
+            <ContractCard
+              key={contract.id}
+              contract={contract}
+              onDelete={onDelete}
+              canDelete={canDelete}
+            />
           ))}
         </div>
       )}
@@ -319,7 +361,15 @@ function BuyerCard({ group }: { group: BuyerGroup }) {
   );
 }
 
-export function ContractRegisterTable({ contracts }: { contracts: Contract[] }) {
+export function ContractRegisterTable({
+  contracts,
+  onDelete,
+  canDelete,
+}: {
+  contracts: Contract[];
+  onDelete?: (contract: Contract) => void;
+  canDelete?: boolean;
+}) {
   const groups = useMemo(() => groupByBuyer(contracts), [contracts]);
 
   if (groups.length === 0) {
@@ -331,7 +381,12 @@ export function ContractRegisterTable({ contracts }: { contracts: Contract[] }) 
   return (
     <div className="space-y-3 p-4">
       {groups.map((group) => (
-        <BuyerCard key={group.key} group={group} />
+        <BuyerCard
+          key={group.key}
+          group={group}
+          onDelete={onDelete}
+          canDelete={canDelete}
+        />
       ))}
     </div>
   );

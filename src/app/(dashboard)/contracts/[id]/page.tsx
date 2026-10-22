@@ -16,7 +16,7 @@ import { DueDateBadge } from '@/components/contracts/contract-register';
 import { BASIC_DATE_LABELS, CONTAINER_FIELD_LABELS } from '@/lib/contract-labels';
 import { commercialFieldVisibility } from '@/lib/commercial-calculations';
 import { formatDate, formatNumber, statusBadge, statusLabel } from '@/lib/utils';
-import { ArrowLeft, Pencil, Scale, XCircle } from 'lucide-react';
+import { ArrowLeft, Pencil, Scale, XCircle, Trash2, AlertTriangle } from 'lucide-react';
 
 function containerPrice(c: ContractContainer) {
   const term = (c.incoterm ?? 'FOB').toUpperCase();
@@ -31,6 +31,18 @@ export default function ContractDetailPage() {
   const searchParams = useSearchParams();
   const successToastShown = useRef(false);
   const [amendTarget, setAmendTarget] = useState<ContractContainer | null>(null);
+
+  const [reviseModalOpen, setReviseModalOpen] = useState(false);
+  const [reviseMt, setReviseMt] = useState<number>(0);
+  const [reviseReason, setReviseReason] = useState('');
+  const [revising, setRevising] = useState(false);
+
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (successToastShown.current) return;
@@ -96,15 +108,7 @@ export default function ContractDetailPage() {
   const isAdmin = ['SUPER_ADMIN', 'OFFICE_ADMIN'].includes(currentUser.role);
   const canReviseQty = (isCreator || isAdmin) && contract.status !== 'CANCELLED';
   const canCancel = (isCreator || isAdmin) && contract.status !== 'CANCELLED' && contract.status !== 'COMPLETED';
-
-  const [reviseModalOpen, setReviseModalOpen] = useState(false);
-  const [reviseMt, setReviseMt] = useState<number>(contract.totalMt);
-  const [reviseReason, setReviseReason] = useState('');
-  const [revising, setRevising] = useState(false);
-
-  const [cancelModalOpen, setCancelModalOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState('');
-  const [cancelling, setCancelling] = useState(false);
+  const canDelete = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'SUPER_SALES'].includes(currentUser.role);
 
   const handleReviseQuantity = async () => {
     if (!reviseMt || reviseMt <= 0) {
@@ -148,6 +152,20 @@ export default function ContractDetailPage() {
       showError(e?.message || 'Failed to cancel contract');
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleDeleteContract = async () => {
+    setDeleting(true);
+    try {
+      await api.deleteContract(contract.id);
+      showSuccess(`Contract ${contract.contractNumber} deleted successfully`);
+      invalidateQueryCache(`contract:${id}`);
+      invalidateQueryCache('contracts:all');
+      router.push('/contracts');
+    } catch (e: any) {
+      showError(e?.message || 'Failed to delete contract');
+      setDeleting(false);
     }
   };
 
@@ -209,6 +227,15 @@ export default function ContractDetailPage() {
               className="ems-btn-secondary gap-1 text-sm text-rose-600 hover:border-rose-300 hover:bg-rose-50"
             >
               <XCircle className="h-4 w-4 text-rose-600" /> Cancel Contract
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => setDeleteModalOpen(true)}
+              className="ems-btn-secondary gap-1 text-sm text-red-600 hover:border-red-300 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4 text-red-600" /> Delete Contract
             </button>
           )}
           {canEdit && (
@@ -572,6 +599,64 @@ export default function ContractDetailPage() {
                 disabled={cancelling}
               >
                 {cancelling ? 'Cancelling…' : 'Confirm Cancellation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-red-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-red-600 mb-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Delete Contract</h3>
+                <p className="text-xs text-slate-500">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <div className="my-4 rounded-xl bg-slate-50 p-3.5 border border-slate-200/80 space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Contract Number:</span>
+                <span className="font-bold text-slate-800">{contract.contractNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Buyer:</span>
+                <span className="font-semibold text-slate-700">{contract.buyer?.name || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Quantity:</span>
+                <span className="font-semibold text-slate-700">{contract.totalMt} MT ({contract.numberOfContainers} FCL)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Current Status:</span>
+                <span className="font-semibold text-slate-700">{statusLabel(contract.status)}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to permanently delete this contract? All related lots, containers, commercial logs, and active inventory allocations will be completely removed and restored to stock.
+            </p>
+
+            <div className="mt-6 flex justify-end gap-2.5">
+              <button
+                type="button"
+                className="ems-btn-secondary text-sm px-4 py-2"
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 transition-colors disabled:opacity-50"
+                onClick={handleDeleteContract}
+                disabled={deleting}
+              >
+                <Trash2 className="h-4 w-4" />
+                {deleting ? 'Deleting…' : 'Delete Contract'}
               </button>
             </div>
           </div>

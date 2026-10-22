@@ -113,6 +113,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data || {}),
     }),
+  deleteContract: (id: string) =>
+    request<{ success: boolean; message: string }>(`/contracts/${id}`, {
+      method: 'DELETE',
+    }),
   allAudits: () => request<any[]>('/contracts/audit/all'),
   notifications: () =>
     request<{ id: string; message: string; contractId?: string; createdAt: string; readAt?: string | null }[]>(
