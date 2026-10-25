@@ -44,6 +44,10 @@ export default function ProductionRunDetailPage() {
       api.production.wastageTypes('HULLING'),
       api.masters.products(),
     ]);
+    if (!r) {
+      setLoadError('Production run not found');
+      return;
+    }
     setRun(r);
     setCleaningTypes(ct);
     setHullingTypes(ht);
@@ -224,13 +228,13 @@ export default function ProductionRunDetailPage() {
           contractId: mc?.contractId || '',
           containerId,
           quantityKg: Number(quantityKg),
-          remarks: `Direct fulfillment from production run ${run.productionNumber}`,
+          remarks: `Direct fulfillment from production run ${run?.productionNumber || ''}`,
         };
       });
 
     const totalAllocated = directAllocationsList.reduce((s, a) => s + a.quantityKg, 0);
-    if (totalAllocated > (run.netOutputKg || 0) + 0.001) {
-      showError(`Allocated quantity (${totalAllocated} KG) exceeds net processed output (${run.netOutputKg} KG)`);
+    if (totalAllocated > (run?.netOutputKg || 0) + 0.001) {
+      showError(`Allocated quantity (${totalAllocated} KG) exceeds net processed output (${run?.netOutputKg || 0} KG)`);
       return;
     }
 
@@ -282,8 +286,40 @@ export default function ProductionRunDetailPage() {
   const showHulling = !isCleaningOnly && run?.cleaningFinalizedAt && !run?.hullingFinalizedAt;
   const showFinalise = awaitingFinalise || (run?.cleaningFinalizedAt && (isCleaningOnly || run?.hullingFinalizedAt) && !run?.finalisedAt && run?.status !== 'COMPLETED');
 
+  if (loadError) {
+    return (
+      <ProductionShell title="Production Run">
+        <div className="mb-4">
+          <Link href="/production/runs" className="text-sm text-blue-600 hover:underline">
+            ← Back to runs
+          </Link>
+        </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          <p className="font-semibold">Unable to load production run</p>
+          <p className="text-sm text-red-600 mt-1">{loadError}</p>
+        </div>
+      </ProductionShell>
+    );
+  }
+
+  if (!run) {
+    return (
+      <ProductionShell title="Production Run">
+        <div className="mb-4">
+          <Link href="/production/runs" className="text-sm text-blue-600 hover:underline">
+            ← Back to runs
+          </Link>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-slate-500 py-8">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+          <span>Loading production run details…</span>
+        </div>
+      </ProductionShell>
+    );
+  }
+
   return (
-    <ProductionShell title={run.productionNumber} subtitle={`${run.product?.name} · ${run.processType?.replace(/_/g, ' ')}`}>
+    <ProductionShell title={run.productionNumber || 'Production Run'} subtitle={`${run.product?.name || ''} · ${run.processType?.replace(/_/g, ' ') || ''}`}>
       <div className="mb-4">
         <Link href="/production/runs" className="text-sm text-blue-600 hover:underline">
           ← Back to runs
