@@ -1,0 +1,102 @@
+# Frontend CI/CD
+#   Pull requests  → type-check + production build
+#   Push to main   → same, then deploy to the Hostinger VPS
+#
+# Deploy needs two repository secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST     the server's IP address
+#   VPS_SSH_KEY  private key whose public half is installed on the VPS as a
+#                forced-command key (it can only run deploy/scripts/ci-deploy.sh)
+# Without them the deploy job is skipped with a warning; CI still runs.
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: Type-check & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      NEXT_PUBLIC_API_URL: /api/v1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+
+      - name: Production dependency audit (informational)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
+      - name: Lint (informational, does not block)
+        run: npm run lint
+        continue-on-error: true
+
+  deploy:
+    name: Deploy to VPS
+    needs: ci
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: ems-production-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Check deploy secrets
+        id: secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -n "$VPS_HOST" ] && [ -n "$VPS_SSH_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::VPS_HOST / VPS_SSH_KEY secrets are not set; skipping deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy (backup → build → restart → smoke test on the server)
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          # Pinned server host key (hashed, so the IP is not revealed here).
+          VPS_KNOWN_HOST: "|1|RMDhQa8irNMT7a2dxp9DWfevEvk=|Pvs0NA7GBYDrPxDMewlImfgCpAI= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAnHFXskEkkkGq0QmNzJGZHYoc/OPZPf6YSSk0fItGUW"
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOST" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o ServerAliveInterval=30 "root@$VPS_HOST" deploy
+
+      - name: Public health check
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          curl -fsS --retry 6 --retry-delay 5 --retry-all-errors "http://$VPS_HOST/api/v1/health"
+          curl -fsS -o /dev/null --retry 3 --retry-delay 5 "http://$VPS_HOST/login"
