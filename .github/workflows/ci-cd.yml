@@ -98,5 +98,5 @@ jobs:
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
-          curl -fsS --retry 6 --retry-delay 5 --retry-all-errors "http://$VPS_HOST/api/v1/health"
-          curl -fsS -o /dev/null --retry 3 --retry-delay 5 "http://$VPS_HOST/login"
+          curl -fsSL --retry 6 --retry-delay 5 --retry-all-errors "http://$VPS_HOST/api/v1/health"   # follows the redirect to https://rajfoodems.cloud
+          curl -fsSL -o /dev/null --retry 3 --retry-delay 5 "http://$VPS_HOST/login"
