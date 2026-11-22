@@ -47,12 +47,17 @@ export function Sidebar() {
       {/* Brand */}
       <div className="border-b border-slate-100 px-5 py-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-500 shadow-md shadow-blue-600/20">
-            <Globe2 className="h-6 w-6 text-white" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
+          <img
+            src="/brand/rajfoods-logo-192.png"
+            alt="Raj Foods"
+            width={48}
+            height={48}
+            className="h-12 w-12 shrink-0 object-contain"
+          />
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600/80">EMS Platform</p>
-            <p className="text-base font-bold leading-tight text-slate-800">Export Management</p>
+            <p className="text-base font-bold leading-tight text-slate-800">Raj Foods EMS</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-green-700/80">Export Management</p>
           </div>
         </div>
         {user.officeName && (

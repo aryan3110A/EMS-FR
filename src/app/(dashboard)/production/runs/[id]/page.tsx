@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ProductionShell } from '@/components/production/production-shell';
-import { api } from '@/lib/api';
+import { api, type FulfilledContainer } from '@/lib/api';
+import { FulfilmentCompletedPrompt } from '@/components/containers/fulfilment-completed-prompt';
 import { showError, showSuccess } from '@/lib/toast';
 import { invalidateQueryCache } from '@/lib/use-cached-query';
 import { formatDate, formatNumber } from '@/lib/utils';
@@ -32,10 +33,15 @@ export default function ProductionRunDetailPage() {
     unit: 'KG',
     remarks: '',
   });
-  const role =
-    typeof window !== 'undefined'
-      ? (JSON.parse(localStorage.getItem('ems_user') || '{}').role as string)
-      : '';
+  const [fulfilledPrompt, setFulfilledPrompt] = useState<FulfilledContainer[]>([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const storedUser =
+    typeof window !== 'undefined' ? (JSON.parse(localStorage.getItem('ems_user') || '{}') as { role?: string; canDeleteProduction?: boolean }) : {};
+  const role = storedUser.role || '';
+  const isProductionOps = ['SUPER_ADMIN', 'OFFICE_ADMIN', 'PRODUCTION_TEAM'].includes(role);
+  const canDeleteProduction = role === 'SUPER_ADMIN' || !!storedUser.canDeleteProduction;
 
   async function load() {
     const [r, ct, ht, prods] = await Promise.all([
@@ -52,18 +58,39 @@ export default function ProductionRunDetailPage() {
     setCleaningTypes(ct);
     setHullingTypes(ht);
 
-    if (r.cleaningOutputKg != null) {
-      setActualCleanedOutputKg(r.cleaningOutputKg);
+    // Pre-fill previous entries (e.g. after "Back to Stage 1") so nothing has to be retyped (§5.3)
+    const cleanedOut = r.processType === 'CLEANING' ? r.netOutputKg : r.hullingInputKg;
+    if ((r.cleaning || []).length || cleanedOut > 0) {
+      setCleanQty(Object.fromEntries((r.cleaning || []).map((c: any) => [c.wastageTypeId, c.quantityKg])));
+      if (cleanedOut > 0) setActualCleanedOutputKg(cleanedOut);
     }
-    if (r.netOutputKg != null) {
-      setActualProcessedOutputKg(r.netOutputKg);
+    if (r.processType !== 'CLEANING' && (r.hulling || []).length) {
+      setHullLines(
+        Object.fromEntries(
+          (r.hulling || []).map((h: any) => [
+            h.wastageTypeId,
+            h.numberOfBags && h.weightPerBagKg
+              ? { bags: h.numberOfBags, weightPerBag: h.weightPerBagKg }
+              : { direct: h.directQtyKg ?? h.quantityKg },
+          ]),
+        ),
+      );
+      if (r.netOutputKg > 0) setActualProcessedOutputKg(r.netOutputKg);
     }
 
-    // Determine target product for direct fulfillment
-    let targetProductId = r.productId;
-    if (r.processType === 'HULLING_SORTEX' || r.processType === 'FULL_PROCESS') {
-      const hss = (prods || []).find((p: any) => p.code === 'HSS' || (p.name || '').toLowerCase().includes('hulled sesame'));
-      if (hss) targetProductId = hss.id;
+    // Direct fulfilment only for FINAL output (§2): NSS Hulling+Sortex → HSS; NSS cleaning/sortex
+    // and HSS cleaning-only are not finished products yet.
+    const code = r.product?.code;
+    const pname = (r.product?.name || '').toLowerCase();
+    const nss = code === 'NSS' || pname.includes('natural sesame');
+    const hssInput = code === 'HSS' || pname.startsWith('hulled sesame');
+    const hullingSortex = r.processType === 'HULLING_SORTEX' || r.processType === 'FULL_PROCESS';
+    let targetProductId: string | null = r.productId;
+    if (nss && hullingSortex) {
+      const hss = (prods || []).find((p: any) => p.code === 'HSS' || (p.name || '').toLowerCase() === 'hulled sesame seeds');
+      targetProductId = hss?.id || null;
+    } else if ((nss && !hullingSortex) || (hssInput && r.processType === 'CLEANING')) {
+      targetProductId = null;
     }
 
     if (targetProductId) {
@@ -86,6 +113,15 @@ export default function ProductionRunDetailPage() {
   const isSortex = run?.processType === 'SORTEX';
   const isHullingSortex = run?.processType === 'HULLING_SORTEX' || run?.processType === 'FULL_PROCESS';
   const awaitingFinalise = run?.status === 'AWAITING_FINALISATION';
+  const inputName = (run?.product?.name || '').toLowerCase();
+  const inputIsNss = run?.product?.code === 'NSS' || inputName.includes('natural sesame');
+  const inputIsHss = run?.product?.code === 'HSS' || inputName.startsWith('hulled sesame');
+  const outputAwaitingNote =
+    inputIsNss && !isHullingSortex
+      ? 'Output remains Natural Sesame Seeds — Awaiting Hulling + Sortex. It is not a finished product and returns to Raw / Awaiting Factory Processing stock.'
+      : inputIsHss && isCleaningOnly
+        ? 'Output remains Hulled Sesame Seeds — Awaiting Sortex. It returns to Raw / Awaiting Factory Processing stock until Sortex is completed.'
+        : null;
 
   const wastageBreakdown = useMemo(() => {
     if (!run) return [];
@@ -138,7 +174,16 @@ export default function ProductionRunDetailPage() {
   const stage1DiffPct = run?.totalInputKg > 0 ? (stage1Diff / run.totalInputKg) * 100 : 0;
 
   // Stage 2 calculations
-  const stage2Input = run?.cleaningOutputKg || run?.totalInputKg || 0;
+  // Stage 2 input is exactly the confirmed Stage 1 output (§5.2)
+  const stage2Input = run?.hullingInputKg || 0;
+  const stage1Summary = useMemo(() => {
+    if (!run?.cleaningFinalizedAt || isCleaningOnly) return null;
+    const lines = (run.cleaning || []).map((c: any) => ({ name: c.wastageType?.nameEn || 'Wastage', kg: c.quantityKg }));
+    const recorded = lines.reduce((s: number, l: any) => s + (l.kg || 0), 0);
+    const output = run.hullingInputKg || 0;
+    const diff = Math.round(((run.totalInputKg || 0) - recorded - output) * 1000) / 1000;
+    return { lines, recorded, output, diff, pct: run.totalInputKg > 0 ? (diff / run.totalInputKg) * 100 : 0 };
+  }, [run, isCleaningOnly]);
   const stage2Wastage = useMemo(() => {
     return hullingTypes.reduce((s, t) => {
       const line = hullLines[t.id] || {};
@@ -240,16 +285,17 @@ export default function ProductionRunDetailPage() {
 
     if (!window.confirm('Finalise production? Remaining output will be stored in Processed Inventory.')) return;
     try {
-      await api.production.finalise(id, {
+      const res = await api.production.finalise(id, {
         dispositions: wastageBreakdown.map((l) => ({
           wastageTypeId: l.wastageTypeId,
           action: dispositions[l.wastageTypeId] || 'STORE',
         })),
         directAllocations: directAllocationsList.length > 0 ? directAllocationsList : undefined,
       });
-      showSuccess('Production finalised — output allocated / stored');
+      showSuccess(outputAwaitingNote ? 'Production finalised — output returned to awaiting stock' : 'Production finalised — output allocated / stored');
       invalidateQueryCache('production:');
       await load();
+      if (res?.fulfilledContainers?.length) setFulfilledPrompt(res.fulfilledContainers);
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Finalise failed');
     }
@@ -271,20 +317,49 @@ export default function ProductionRunDetailPage() {
     }
   }
 
-  async function reopenCleaning() {
-    const reason = window.prompt('Reason for reopening cleaning?') || undefined;
+  async function backToStage1() {
+    const reason = window.prompt(
+      'Back to Stage 1: your Stage 1 and Stage 2 entries are kept and pre-filled. Stage 2 must be confirmed again after you correct Stage 1.\n\nReason for the correction (optional):',
+    );
+    if (reason === null) return;
     try {
-      await api.production.reopenCleaning(id, { reason });
-      showSuccess('Cleaning reopened');
+      await api.production.backToStage1(id, { reason: reason || undefined });
+      showSuccess('Back to Stage 1 — previous entries are pre-filled for correction');
+      invalidateQueryCache('production:');
       await load();
     } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Reopen failed');
+      showError(e instanceof Error ? e.message : 'Could not return to Stage 1');
     }
   }
 
-  const showCleaning = !run?.cleaningFinalizedAt;
-  const showHulling = !isCleaningOnly && run?.cleaningFinalizedAt && !run?.hullingFinalizedAt;
-  const showFinalise = awaitingFinalise || (run?.cleaningFinalizedAt && (isCleaningOnly || run?.hullingFinalizedAt) && !run?.finalisedAt && run?.status !== 'COMPLETED');
+  async function deleteRun() {
+    if (!deleteReason.trim()) {
+      showError('A reason is required to delete a production record');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await api.production.deleteRun(id, { reason: deleteReason.trim() });
+      showSuccess('Production deleted — stock restored to its sources');
+      setDeleteOpen(false);
+      invalidateQueryCache('production:');
+      await load();
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const isDeleted = !!run?.deletedAt;
+  const showCleaning = !run?.cleaningFinalizedAt && !isDeleted;
+  const showHulling = !isDeleted && !isCleaningOnly && run?.cleaningFinalizedAt && !run?.hullingFinalizedAt;
+  const showFinalise =
+    !isDeleted &&
+    (awaitingFinalise ||
+      (run?.cleaningFinalizedAt && (isCleaningOnly || run?.hullingFinalizedAt) && !run?.finalisedAt && run?.status !== 'COMPLETED'));
+  const canGoBackToStage1 = isProductionOps && !isDeleted && !!run?.cleaningFinalizedAt && !run?.finalisedAt && run?.status !== 'COMPLETED';
+  const stage2Prefilled = !!run && !run.hullingFinalizedAt && (run.hulling || []).length > 0;
 
   if (loadError) {
     return (
@@ -320,11 +395,30 @@ export default function ProductionRunDetailPage() {
 
   return (
     <ProductionShell title={run.productionNumber || 'Production Run'} subtitle={`${run.product?.name || ''} · ${run.processType?.replace(/_/g, ' ') || ''}`}>
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <Link href="/production/runs" className="text-sm text-blue-600 hover:underline">
           ← Back to runs
         </Link>
+        {canDeleteProduction && !isDeleted && (
+          <button
+            type="button"
+            className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+            onClick={() => {
+              setDeleteReason('');
+              setDeleteOpen(true);
+            }}
+          >
+            Delete Production
+          </button>
+        )}
       </div>
+
+      {isDeleted && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <p className="font-semibold">This production record was deleted on {formatDate(run.deletedAt)}.</p>
+          <p className="mt-1">Reason: {run.deleteReason || '—'}. Its stock was returned to the original sources; the record is kept for audit.</p>
+        </div>
+      )}
 
       <div className="ems-card mb-4 grid gap-3 p-4 sm:grid-cols-4">
         <div>
@@ -440,12 +534,54 @@ export default function ProductionRunDetailPage() {
                 Stage 2 Input (from Stage 1 Cleaned Output): <span className="font-semibold">{formatNumber(stage2Input, 0)} KG</span>
               </p>
             </div>
-            {['SUPER_ADMIN', 'OFFICE_ADMIN'].includes(role) && (
-              <button type="button" className="text-sm text-amber-700 hover:underline" onClick={reopenCleaning}>
-                Reopen cleaning
+            {canGoBackToStage1 && (
+              <button type="button" className="ems-btn-secondary text-xs" onClick={backToStage1}>
+                ← Back to Stage 1
               </button>
             )}
           </div>
+
+          {stage1Summary && (
+            <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-sky-800">Stage 1 Summary</p>
+              <div className="grid gap-2 text-sm sm:grid-cols-4">
+                <div>
+                  <span className="text-xs text-slate-500">Original Input</span>
+                  <p className="font-semibold">{formatNumber(run.totalInputKg, 3)} KG</p>
+                </div>
+                {stage1Summary.lines.map((l: any) => (
+                  <div key={l.name}>
+                    <span className="text-xs text-slate-500">{l.name}</span>
+                    <p className="font-semibold">{formatNumber(l.kg, 3)} KG</p>
+                  </div>
+                ))}
+                <div>
+                  <span className="text-xs text-slate-500">Total Recorded Wastage</span>
+                  <p className="font-semibold text-amber-700">{formatNumber(stage1Summary.recorded, 3)} KG</p>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500">Actual Stage 1 Output</span>
+                  <p className="font-semibold text-emerald-700">{formatNumber(stage1Summary.output, 3)} KG</p>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500">Weight Difference</span>
+                  <p className="font-semibold">{formatNumber(stage1Summary.diff, 3)} KG</p>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500">Difference %</span>
+                  <p className={`font-semibold ${stage1Summary.pct > 15 ? 'text-rose-600' : ''}`}>{stage1Summary.pct.toFixed(2)}%</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {stage2Prefilled && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              Stage 2 values entered before Stage 1 was corrected are pre-filled below. The Stage 2 input is now{' '}
+              <span className="font-semibold">{formatNumber(stage2Input, 3)} KG</span> — review the wastage and output
+              against it and confirm Stage 2 again.
+            </div>
+          )}
 
           <div className="mb-4 grid gap-3 sm:grid-cols-2">
             <div>
@@ -466,7 +602,7 @@ export default function ProductionRunDetailPage() {
           <div className="space-y-3">
             {hullingTypes.map((t) => (
               <div key={t.id} className="grid gap-2 rounded-lg border border-slate-100 p-2 sm:grid-cols-4">
-                <p className="text-sm font-medium sm:col-span-4">{t.nameEn}</p>
+                <p className="text-sm font-medium sm:col-span-4">{t.nameEn} (KG)</p>
                 <input
                   className="ems-input"
                   type="number"
@@ -541,10 +677,21 @@ export default function ProductionRunDetailPage() {
         <div className="ems-card mb-4 p-4">
           <h3 className="mb-3 font-semibold text-slate-800">Production Finalisation</h3>
 
-          {isHullingSortex && (
+          <div className="mb-3 flex justify-end">
+            {canGoBackToStage1 && (
+              <button type="button" className="ems-btn-secondary text-xs" onClick={backToStage1}>
+                ← Back to Stage 1
+              </button>
+            )}
+          </div>
+          {isHullingSortex && inputIsNss && (
             <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-              <span className="font-semibold">Automatic Product Conversion:</span> Natural Sesame Seeds will automatically convert to <span className="font-bold underline">Hulled Sesame Seeds (HSS)</span> upon finalization.
+              <span className="font-semibold">Product Conversion:</span> Natural Sesame Seeds become{' '}
+              <span className="font-bold">Hulled Sesame Seeds — Final Processed</span> on finalisation.
             </div>
+          )}
+          {outputAwaitingNote && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{outputAwaitingNote}</div>
           )}
 
           <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -614,7 +761,8 @@ export default function ProductionRunDetailPage() {
             </table>
           )}
 
-          {/* Direct Fulfillment Section (§9) */}
+          {/* Direct Fulfillment Section (§9) — only for final processed output */}
+          {!outputAwaitingNote && (
           <div className="mb-4 border-t border-slate-200 pt-4">
             <h4 className="mb-1 text-sm font-semibold text-slate-800">2. Direct Fulfillment to Contract Containers (Optional)</h4>
             <p className="mb-3 text-xs text-slate-500">
@@ -704,19 +852,22 @@ export default function ProductionRunDetailPage() {
               </div>
             )}
           </div>
+          )}
 
           <button type="button" className="ems-btn-primary text-sm" onClick={finalise}>
-            Finalise Production & Store Remaining
+            {outputAwaitingNote ? 'Finalise Production → Return Output to Awaiting Stock' : 'Finalise Production & Store Remaining'}
           </button>
         </div>
       )}
 
-      {run.status === 'COMPLETED' && (
+      {run.status === 'COMPLETED' && !isDeleted && (
         <div className="ems-card p-4">
           <h3 className="mb-2 font-semibold">Completed</h3>
           <p className="text-sm text-slate-600">
-            Finalised {run.finalisedAt ? formatDate(run.finalisedAt) : ''}. Good output is in Processed Inventory —
-            allocate via Fulfilment.
+            Finalised {run.finalisedAt ? formatDate(run.finalisedAt) : ''}.{' '}
+            {run.outputStockCategory === 'RAW_MATERIAL'
+              ? `Output (${formatNumber(run.netOutputKg, 0)} KG) is in Raw / Awaiting Factory Processing stock — it still needs its remaining process.`
+              : 'Good output is in Processed Inventory — allocate via Fulfilment.'}
           </p>
           {(run.outputLots || []).map((l: any) => (
             <p key={l.id} className="mt-1 text-sm">
@@ -733,6 +884,43 @@ export default function ProductionRunDetailPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {fulfilledPrompt.length > 0 && (
+        <FulfilmentCompletedPrompt items={fulfilledPrompt} onDone={() => setFulfilledPrompt([])} />
+      )}
+
+      {deleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h3 className="font-semibold text-red-700">Delete Production {run.productionNumber}?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              This is a soft delete: the record and its audit history are kept, and stock is returned to where it came
+              from. Deletion is refused if the output or wastage has already been used, allocated, transferred or sold.
+            </p>
+            <label className="ems-label mt-3">Reason *</label>
+            <textarea
+              className="ems-input w-full"
+              rows={3}
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              maxLength={500}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="ems-btn-secondary text-sm" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                onClick={deleteRun}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting…' : 'Delete Production'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

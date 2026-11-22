@@ -8,7 +8,6 @@ import { ContractDetailSkeleton } from '@/components/ui/page-loader';
 import { AmendmentModal } from '@/components/contracts/amendment-modal';
 import { AmendmentHistory } from '@/components/contracts/amendment-history';
 import { AuditLogPanel } from '@/components/contracts/audit-log-panel';
-import { ContainerStatusUpdater } from '@/components/contracts/container-status-updater';
 import { api, ContractContainer } from '@/lib/api';
 import { useCachedQuery, invalidateQueryCache } from '@/lib/use-cached-query';
 import { showSuccess, showError } from '@/lib/toast';
@@ -188,10 +187,6 @@ export default function ContractDetailPage() {
     return vis.changeAmendment && roleOk;
   };
 
-  const canUpdateContainerStatus = (() => {
-    return ['SUPER_ADMIN', 'OFFICE_ADMIN', 'CONTRACT_TEAM', 'PRODUCTION_TEAM', 'SUPER_SALES'].includes(currentUser.role);
-  })();
-
   const refreshContract = () => {
     invalidateQueryCache(`contract:${id}`);
     window.location.reload();
@@ -341,6 +336,7 @@ export default function ContractDetailPage() {
                     <MiniField label={CONTAINER_FIELD_LABELS.shipmentPeriod} value={period} />
                     <MiniField label={CONTAINER_FIELD_LABELS.shippingContainerNo} value={c.containerNo ?? 'Pending'} />
                     <MiniField label="Factory Seal" value={c.factorySealNo ?? '—'} />
+                    <MiniField label="Shipping Line" value={c.shippingLineName ?? '—'} />
                     <MiniField label="Shipping Line Seal" value={c.shippingLineSealNo ?? '—'} />
                     <MiniField label="Container Status" value={c.containerStatus?.replace(/_/g, ' ') ?? '—'} />
                     <MiniField
@@ -436,12 +432,15 @@ export default function ContractDetailPage() {
                     </div>
                   )}
                   {c.id !== 'legacy' && (
-                    <ContainerStatusUpdater
-                      contractId={contract.id}
-                      container={c}
-                      canUpdate={canUpdateContainerStatus}
-                      onUpdated={refreshContract}
-                    />
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                      <p className="text-xs text-slate-500">
+                        Fulfilment, container details, sampling and dispatch are managed step by step on the Container
+                        Status screen.
+                      </p>
+                      <Link href={`/contracts/${contract.id}/containers#container-${c.id}`} className="ems-btn-secondary text-xs">
+                        Open Container Status
+                      </Link>
+                    </div>
                   )}
                 </div>
               );

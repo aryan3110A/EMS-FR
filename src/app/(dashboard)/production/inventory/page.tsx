@@ -10,9 +10,11 @@ import { formatDate, formatNumber } from '@/lib/utils';
 
 const CATEGORY_FILTERS = [
   { value: '', label: 'All Categories' },
-  { value: 'rawKg', label: 'Raw Material' },
-  { value: 'wipKg', label: 'WIP' },
-  { value: 'processedKg', label: 'Processed' },
+  { value: 'rawKg', label: 'Raw / Awaiting Factory Processing' },
+  { value: 'wipKg', label: 'In Production (WIP)' },
+  { value: 'finalProcessedKg', label: 'Final Processed' },
+  { value: 'processedKg', label: 'Processed & Unassigned' },
+  { value: 'allocatedKg', label: 'Allocated to Containers' },
   { value: 'wastageKg', label: 'Wastage' },
   { value: 'rejectedKg', label: 'Sampling-Rejected' },
 ] as const;
@@ -56,7 +58,8 @@ export default function InventoryPage() {
   }, [products, search, category]);
 
   const displayKg = (p: any) => {
-    if (!category) return p.totalKg;
+    // Allocated processed stock is still physically in the factory → part of the tracked total
+    if (!category) return (p.totalKg || 0) + (p.allocatedKg || 0);
     return Number(p[category]) || 0;
   };
 
@@ -68,14 +71,53 @@ export default function InventoryPage() {
         <button type="button" className="mb-4 text-sm text-blue-600" onClick={() => setDetailId(null)}>
           ← Back to products
         </button>
+        {detail.summary && (
+          <div className="ems-card mb-4 p-4">
+            <h3 className="mb-3 font-semibold">Inventory Classification</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full max-w-xl text-sm">
+                <tbody>
+                  {[
+                    [detail.summary.rawLabel, detail.summary.rawKg, ''],
+                    ['In Production (WIP)', detail.summary.wipKg, ''],
+                    [`Final Processed ${detail.summary.productName}`, detail.summary.finalProcessedKg, 'font-semibold'],
+                    ['↳ Processed & Unassigned', detail.summary.unassignedKg, 'pl-4 text-slate-600'],
+                    ['↳ Processed Allocated to Containers', detail.summary.allocatedKg, 'pl-4 text-slate-600'],
+                  ].map(([label, kg, cls]) => (
+                    <tr key={String(label)} className="border-b border-slate-100">
+                      <td className={`py-1.5 ${cls}`}>{label}</td>
+                      <td className="py-1.5 text-right font-medium tabular-nums">{formatNumber(Number(kg), 0)} KG</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td className="py-1.5">Eligible Pending Contracts</td>
+                    <td className="py-1.5 text-right font-medium">{detail.summary.eligiblePendingContracts}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {detail.summary.unassignedMessage && (
+              <p
+                className={`mt-3 rounded-lg px-3 py-2 text-sm font-semibold ${
+                  detail.summary.eligiblePendingContracts ? 'bg-blue-50 text-blue-800' : 'bg-slate-50 text-slate-600'
+                }`}
+              >
+                {detail.summary.unassignedMessage}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-slate-400">
+              Unassigned and Allocated are parts of Final Processed stock and are not added again to the total.
+            </p>
+          </div>
+        )}
         <div className="ems-card mb-4 overflow-x-auto p-4">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b text-left text-slate-500">
                 <th className="py-2">Location</th>
-                <th>Raw</th>
+                <th>Raw / Awaiting</th>
                 <th>WIP</th>
-                <th>Processed</th>
+                <th>Processed (Unassigned)</th>
                 <th>Wastage</th>
                 <th>Sampling Rejected</th>
                 <th>Total</th>
@@ -266,6 +308,9 @@ export default function InventoryPage() {
           <thead>
             <tr className="border-b bg-slate-50 text-left text-slate-500">
               <th className="px-4 py-3">Product</th>
+              <th className="hidden px-4 py-3 md:table-cell">Raw / Awaiting</th>
+              <th className="hidden px-4 py-3 md:table-cell">Final Processed</th>
+              <th className="hidden px-4 py-3 lg:table-cell">Unassigned · Allocated</th>
               <th className="px-4 py-3">{category ? 'Filtered Stock' : 'Total Tracked Stock'}</th>
             </tr>
           </thead>
@@ -282,13 +327,26 @@ export default function InventoryPage() {
                   <p className="font-medium">{p.productName}</p>
                   <p className="text-xs text-slate-400">{p.productCode}</p>
                 </td>
+                <td className="hidden px-4 py-3 tabular-nums md:table-cell">{formatNumber(p.rawKg, 0)} KG</td>
+                <td className="hidden px-4 py-3 tabular-nums md:table-cell">{formatNumber(p.finalProcessedKg ?? p.processedKg, 0)} KG</td>
+                <td className="hidden px-4 py-3 text-xs tabular-nums lg:table-cell">
+                  {formatNumber(p.processedKg, 0)} · {formatNumber(p.allocatedKg || 0, 0)} KG
+                  {p.processedKg > 0.001 && (
+                    <span className="block text-slate-400">
+                      {p.eligiblePendingContracts
+                        ? `${p.eligiblePendingContracts} pending contract${p.eligiblePendingContracts === 1 ? '' : 's'}`
+                        : 'No contracts available to assign'}
+                    </span>
+                  )}
+                </td>
                 <td className="relative px-4 py-3 font-semibold tabular-nums">
                   {formatNumber(displayKg(p), 0)} KG
                   {hoverId === p.productId && (
                     <div className="absolute right-4 top-full z-20 mt-1 w-56 rounded-lg border bg-white p-3 text-xs font-normal shadow-lg">
                       <p className="mb-1 font-semibold">{p.productName}</p>
-                      <p>Raw: {formatNumber(p.rawKg, 0)} KG</p>
-                      <p>Processed: {formatNumber(p.processedKg, 0)} KG</p>
+                      <p>Raw / Awaiting: {formatNumber(p.rawKg, 0)} KG</p>
+                      <p>Processed & Unassigned: {formatNumber(p.processedKg, 0)} KG</p>
+                      <p>Allocated to Containers: {formatNumber(p.allocatedKg || 0, 0)} KG</p>
                       <p>Wastage: {formatNumber(p.wastageKg, 0)} KG</p>
                       <p>Sampling-Rejected: {formatNumber(p.rejectedKg, 0)} KG</p>
                       <p>WIP: {formatNumber(p.wipKg, 0)} KG</p>
@@ -299,7 +357,7 @@ export default function InventoryPage() {
             ))}
             {!filtered.length && (
               <tr>
-                <td colSpan={2} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
                   No inventory
                 </td>
               </tr>

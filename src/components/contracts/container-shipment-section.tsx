@@ -123,31 +123,17 @@ export function ContainerShipmentSection({
           <ReadOnly value={period} />
         </Field>
 
+        {/* ERP 22.11.26 §8.4: one set of container fields, entered by production on the Container Status screen */}
         <Field label="Shipping Container Number">
-          <input
-            className="ems-input"
-            placeholder="Optional — enter when available"
-            value={data.containerNo || ''}
-            onChange={(e) => onPatch({ containerNo: e.target.value })}
-          />
+          <ReadOnly value={data.containerNo || 'Entered on Container Status after fulfilment'} />
         </Field>
 
         <Field label="Factory Seal Number">
-          <input
-            className="ems-input"
-            placeholder="Optional"
-            value={data.factorySealNo || ''}
-            onChange={(e) => onPatch({ factorySealNo: e.target.value })}
-          />
+          <ReadOnly value={data.factorySealNo || '—'} />
         </Field>
 
         <Field label="Shipping Line Seal Number">
-          <input
-            className="ems-input"
-            placeholder="Optional"
-            value={data.shippingLineSealNo || ''}
-            onChange={(e) => onPatch({ shippingLineSealNo: e.target.value })}
-          />
+          <ReadOnly value={data.shippingLineSealNo || '—'} />
         </Field>
       </div>
 
