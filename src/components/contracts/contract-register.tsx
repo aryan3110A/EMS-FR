@@ -259,6 +259,15 @@ function ContractCard({
             >
               View
             </Link>
+            {showContainers && (
+              <Link
+                href={`/contracts/${contract.id}/containers`}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                title="Fulfilment, container details, sampling and dispatch for each container"
+              >
+                Container Status
+              </Link>
+            )}
             {canDelete && (
               <button
                 type="button"

@@ -7,6 +7,7 @@ import { DashboardSkeleton } from '@/components/ui/page-loader';
 import { EmsSelect } from '@/components/ui/ems-select';
 import { UpcomingProductChart } from '@/components/dashboard/upcoming-product-chart';
 import { ShippedProductChart } from '@/components/dashboard/shipped-product-chart';
+import { ContainerKpiPanel } from '@/components/containers/container-kpi-panel';
 import { api, type DashboardStats } from '@/lib/api';
 import { useCachedQuery } from '@/lib/use-cached-query';
 import { formatDate, statusBadge, statusLabel } from '@/lib/utils';
@@ -553,6 +554,11 @@ export default function DashboardPage() {
             <AnimatedCounter value={stats?.containersShipped ?? 0} />
           </p>
         </div>
+      </div>
+
+      {/* Container fulfilment, dispatch and EU/Russia sampling (ERP Changes 22.11.26 §16–§19) */}
+      <div className="mb-6">
+        <ContainerKpiPanel showAging={false} />
       </div>
 
       {/* Payment summary */}

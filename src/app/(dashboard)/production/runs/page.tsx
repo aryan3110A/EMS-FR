@@ -308,9 +308,27 @@ function ProductionRunsPage() {
                     placeholder="Process type"
                     options={processOptions}
                   />
+                  {selectedProduct && isNaturalSesame && form.processType === 'HULLING_SORTEX' && (
+                    <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                      Output becomes Hulled Sesame Seeds — Final Processed.
+                    </p>
+                  )}
+                  {selectedProduct && isNaturalSesame && form.processType !== 'HULLING_SORTEX' && (
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      Natural Sesame is not a finished product on its own: after {form.processType === 'CLEANING' ? 'Cleaning' : 'Sortex'} the
+                      output stays Natural Sesame in Raw / Awaiting Factory Processing stock until Hulling + Sortex.
+                    </p>
+                  )}
+                  {selectedProduct &&
+                    (selectedProduct.code === 'HSS' || (selectedProduct.name || '').toLowerCase().startsWith('hulled sesame')) &&
+                    form.processType === 'CLEANING' && (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        Purchased Hulled Sesame needs Sortex to become Final Processed — Cleaning-only output stays awaiting Sortex.
+                      </p>
+                    )}
                   {selectedProduct && selectedProduct.allowsFullProcess === false && (
                     <p className="text-xs text-amber-700">
-                      Full Process is currently available only for Sesame Seed products.
+                      Hulling + Sortex is available only for Natural Sesame Seeds.
                     </p>
                   )}
                   {selectedProduct && selectedProduct.allowsSortex === false && (

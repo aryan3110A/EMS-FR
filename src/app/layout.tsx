@@ -6,8 +6,12 @@ import './globals.css';
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
 
 export const metadata: Metadata = {
-  title: 'Export Management System',
-  description: 'Inventory, Contract, Production & Dispatch Management',
+  title: {
+    default: 'Raj Foods EMS',
+    template: '%s · Raj Foods EMS',
+  },
+  description: 'Raj Foods Export Management System: contracts, production, inventory, quality and dispatch',
+  applicationName: 'Raj Foods EMS',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

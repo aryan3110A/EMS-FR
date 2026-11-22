@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Globe2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { showError } from '@/lib/toast';
 
@@ -40,11 +39,16 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] p-6">
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-blue-500 shadow-lg shadow-blue-600/20">
-            <Globe2 className="h-7 w-7 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-800">Export Management System</h1>
-          <p className="mt-1 text-sm text-slate-500">Sign in to manage contracts</p>
+          {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset, no optimisation needed */}
+          <img
+            src="/brand/rajfoods-logo-512.png"
+            alt="Raj Foods"
+            width={112}
+            height={112}
+            className="mx-auto mb-4 h-28 w-28 object-contain"
+          />
+          <h1 className="text-2xl font-bold text-slate-800">Raj Foods EMS</h1>
+          <p className="mt-1 text-sm text-slate-500">Export Management System</p>
         </div>
 
         <form onSubmit={handleSubmit} autoComplete="off" className="ems-card space-y-5 p-6">

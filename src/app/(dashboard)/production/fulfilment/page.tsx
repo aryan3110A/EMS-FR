@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ProductionShell, PRODUCTION_CACHE_TTL } from '@/components/production/production-shell';
 import { EmsSelect } from '@/components/ui/ems-select';
-import { api } from '@/lib/api';
+import { api, type FulfilledContainer } from '@/lib/api';
+import { FulfilmentCompletedPrompt } from '@/components/containers/fulfilment-completed-prompt';
 import { showError, showSuccess } from '@/lib/toast';
 import { invalidateQueryCache, useCachedQuery } from '@/lib/use-cached-query';
 import { formatNumber } from '@/lib/utils';
@@ -14,6 +15,7 @@ export default function FulfilmentPage() {
   const [selectedKey, setSelectedKey] = useState('');
   const [quantityKg, setQuantityKg] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [fulfilledPrompt, setFulfilledPrompt] = useState<FulfilledContainer[]>([]);
 
   const { data: products } = useCachedQuery('masters:products', () => api.masters.products(), {
     ttl: PRODUCTION_CACHE_TTL,
@@ -65,7 +67,7 @@ export default function FulfilmentPage() {
     }
     setSaving(true);
     try {
-      await api.production.fulfilmentAllocate({
+      const res = await api.production.fulfilmentAllocate({
         productId,
         locationId,
         contractId: selected.contractId,
@@ -79,6 +81,8 @@ export default function FulfilmentPage() {
       invalidateQueryCache('production:');
       invalidateQueryCache('fulfilment:');
       await Promise.all([refreshStock(), refreshMatching()]);
+      // Same behaviour as fulfilment from Production Finalisation (PDF §8.1, §15.2)
+      if (res?.fulfilledContainers?.length) setFulfilledPrompt(res.fulfilledContainers);
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Fulfilment failed');
     } finally {
@@ -198,6 +202,9 @@ export default function FulfilmentPage() {
           </div>
         )}
       </div>
+      {fulfilledPrompt.length > 0 && (
+        <FulfilmentCompletedPrompt items={fulfilledPrompt} onDone={() => setFulfilledPrompt([])} />
+      )}
     </ProductionShell>
   );
 }

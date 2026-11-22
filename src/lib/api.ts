@@ -118,6 +118,15 @@ export const api = {
       method: 'DELETE',
     }),
   allAudits: () => request<any[]>('/contracts/audit/all'),
+  /** Container Status workflow (ERP Changes 22.11.26) */
+  containerWorkflow: (contractId: string) =>
+    request<ContainerWorkflowView[]>(`/contracts/${contractId}/containers/workflow`),
+  containerAction: (contractId: string, containerId: string, body: ContainerActionPayload) =>
+    request<ContainerWorkflowView>(`/contracts/${contractId}/containers/${containerId}/workflow`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  containerDashboard: () => request<ContainerDashboard>('/contracts/containers/dashboard'),
   notifications: () =>
     request<{ id: string; message: string; contractId?: string; createdAt: string; readAt?: string | null }[]>(
       '/notifications',
@@ -249,7 +258,14 @@ export const api = {
       return request<any[]>(`/production/wastage-lots/truck-report${q}`);
     },
     pendingContracts: () => request<any[]>('/production/pending-contracts'),
-    runs: () => request<any[]>('/production/runs'),
+    runs: (includeDeleted?: boolean) =>
+      request<any[]>(`/production/runs${includeDeleted ? '?includeDeleted=true' : ''}`),
+    backToStage1: (id: string, data?: { reason?: string }) =>
+      request<any>(`/production/runs/${id}/back-to-stage-1`, { method: 'POST', body: JSON.stringify(data || {}) }),
+    deleteRun: (id: string, data: { reason: string }) =>
+      request<any>(`/production/runs/${id}/delete`, { method: 'POST', body: JSON.stringify(data) }),
+    sampleStep: (id: string, data: Record<string, unknown>) =>
+      request<any>(`/production/sampling/${id}/step`, { method: 'PATCH', body: JSON.stringify(data) }),
     run: (id: string) => request<any>(`/production/runs/${id}`),
     startRun: (data: Record<string, unknown>) =>
       request<any>('/production/runs', { method: 'POST', body: JSON.stringify(data) }),
@@ -342,6 +358,184 @@ export interface User {
   role: string;
   officeId?: string;
   officeName?: string;
+  /** Owner or explicitly authorised user (ERP 22.11.26 §4) */
+  canDeleteProduction?: boolean;
+}
+
+export type FulfilmentStatusValue = 'NOT_FULFILLED' | 'PARTIALLY_FULFILLED' | 'FULFILLED';
+
+export interface ContainerWorkflowView {
+  containerId: string;
+  containerIndex: number;
+  stage: string;
+  stageLabel: string;
+  contract: {
+    id: string;
+    contractNumber: string;
+    status: string;
+    buyer: string | null;
+    product: string | null;
+    destinationCountry: string | null;
+    destinationPort: string | null;
+    euClassification: string | null;
+    packaging: string | null;
+    requiredKg: number;
+    expectedShipmentDate?: string | null;
+  };
+  fulfilment: {
+    status: FulfilmentStatusValue;
+    requiredKg: number;
+    fulfilledKg: number;
+    remainingKg: number;
+    firstAllocationDate?: string | null;
+    fullFulfilmentDate?: string | null;
+    lines: { id: string | null; productId: string; productName?: string; requiredKg: number; fulfilledKg: number }[];
+    lots: {
+      id: string;
+      status: string;
+      quantityKg: number;
+      allocationDate: string;
+      lotNumber: string | null;
+      productionNumber: string | null;
+      productId: string;
+    }[];
+  };
+  details: {
+    status: 'PENDING' | 'COMPLETED';
+    missing: string[];
+    containerNo?: string | null;
+    factorySealNo?: string | null;
+    shippingLineName?: string | null;
+    shippingLineSealNo?: string | null;
+    remarks?: string | null;
+    updatedAt?: string | null;
+    updatedBy?: string | null;
+  };
+  sampling: {
+    required: boolean;
+    reason: string;
+    status: string;
+    samplingDate?: string | null;
+    resultStatus?: string | null;
+    resultDate?: string | null;
+    approvedAt?: string | null;
+    records: {
+      id: string;
+      productId: string;
+      status: string;
+      result?: string | null;
+      samplingType?: string | null;
+      sampleReference?: string | null;
+      testingAgency?: string | null;
+      collectionDate?: string | null;
+      resultDate?: string | null;
+      reportReference?: string | null;
+      approvedAt?: string | null;
+      remarks?: string | null;
+      updatedBy?: string | null;
+      createdAt: string;
+    }[];
+  };
+  dispatch: {
+    status: 'NOT_READY' | 'READY' | 'DISPATCHED';
+    readyForDispatchAt?: string | null;
+    readyBy?: string | null;
+    dispatchedAt?: string | null;
+    dispatchedBy?: string | null;
+    dispatchRemarks?: string | null;
+    actualShipmentDate?: string | null;
+  };
+  aging: {
+    daysSinceFirstAllocation: number | null;
+    daysSinceFullFulfilment: number | null;
+    daysWaitingForSampling: number | null;
+    daysAwaitingResult: number | null;
+    daysReadyForDispatch: number | null;
+  };
+  availableActions: string[];
+  history?: {
+    fromStatus: string | null;
+    fromLabel: string | null;
+    toStatus: string;
+    toLabel: string;
+    remarks: string | null;
+    changedBy: string;
+    createdAt: string;
+  }[];
+}
+
+export type ContainerActionPayload = {
+  action: string;
+  containerNo?: string;
+  factorySealNo?: string;
+  shippingLineName?: string;
+  shippingLineSealNo?: string;
+  samplingDate?: string;
+  samplingType?: string;
+  sampleReference?: string;
+  testingAgency?: string;
+  result?: 'PASSED' | 'FAILED';
+  resultDate?: string;
+  resultReference?: string;
+  dispatchDate?: string;
+  shipmentDate?: string;
+  remarks?: string;
+  reason?: string;
+};
+
+/** Returned by fulfilment/finalisation when containers reach full fulfilment (PDF §8.1) */
+export type FulfilledContainer = {
+  contractId: string;
+  contractNumber: string;
+  containerId: string;
+  containerIndex: number;
+  requiredKg: number;
+  fulfilledKg: number;
+};
+
+export type DashboardContainerItem = {
+  contractId: string;
+  contractNumber: string;
+  containerId: string;
+  containerIndex: number;
+  containerNo?: string | null;
+  buyer: string | null;
+  product: string | null;
+  destination: string | null;
+  stage: string;
+  stageLabel: string;
+  fulfilledKg: number;
+  requiredKg: number;
+  samplingStatus: string;
+  daysSinceFirstAllocation: number | null;
+  daysSinceFullFulfilment: number | null;
+  daysWaitingForSampling: number | null;
+  daysAwaitingResult: number | null;
+  daysReadyForDispatch: number | null;
+};
+type DashboardBucket = { count: number; containers: DashboardContainerItem[] };
+export interface ContainerDashboard {
+  containers: {
+    notFulfilled: DashboardBucket;
+    partiallyFulfilled: DashboardBucket;
+    fulfilledPendingDispatch: DashboardBucket;
+    readyForDispatch: DashboardBucket;
+    dispatched: DashboardBucket;
+    onHold: DashboardBucket;
+    total: number;
+  };
+  sampling: {
+    applicableContainers: number;
+    notRequiredContainers: number;
+    pending: DashboardBucket;
+    sent: DashboardBucket;
+    awaitingResult: DashboardBucket;
+    resultReceived: DashboardBucket;
+    approved: DashboardBucket;
+    rejectedOnHold: DashboardBucket;
+  };
+  aging: DashboardContainerItem[];
+  generatedAt: string;
 }
 
 export interface Office {
@@ -446,6 +640,7 @@ export interface ContainerProduct {
   containerNo?: string;
   factorySealNo?: string;
   shippingLineSealNo?: string;
+  shippingLineName?: string;
   quantityMt?: number;
   packagingTypeId?: string;
   packagingSizeId?: string;
@@ -550,6 +745,7 @@ export interface ContractContainer {
   containerNo?: string;
   factorySealNo?: string;
   shippingLineSealNo?: string;
+  shippingLineName?: string;
   destinationPortId?: string;
   expectedShipmentDate?: string;
   shipmentMonth?: string;

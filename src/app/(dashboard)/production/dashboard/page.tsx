@@ -5,7 +5,7 @@ import { ProductionShell } from '@/components/production/production-shell';
 import { api } from '@/lib/api';
 import { useCachedQuery } from '@/lib/use-cached-query';
 import { formatDate, formatNumber } from '@/lib/utils';
-import { DueDateBadge } from '@/components/contracts/contract-register';
+import { ContainerKpiPanel } from '@/components/containers/container-kpi-panel';
 
 export default function ProductionDashboardPage() {
   const { data, loading, refresh } = useCachedQuery(
@@ -37,175 +37,142 @@ export default function ProductionDashboardPage() {
         <p className="text-sm text-slate-500">Loading…</p>
       ) : (
         <>
-          {/* Top KPIs (§18.2) */}
+          {/* Inventory KPIs (ERP 22.11.26 §18.1) */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="ems-card border-l-4 border-l-blue-600 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Material in Production</p>
-              <p className="mt-2 text-2xl font-bold text-blue-900">
-                {formatNumber(Number(data?.materialInProductionKg ?? data?.inventory?.totalWip ?? 0), 0)}{' '}
-                <span className="text-xs font-normal text-slate-500">KG</span>
-              </p>
-              <p className="mt-1 text-xs text-slate-400">Active WIP material across plants</p>
-            </div>
-
-            <div className="ems-card border-l-4 border-l-emerald-600 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Processed Inventory</p>
-              <p className="mt-2 text-2xl font-bold text-emerald-900">
-                {formatNumber(Number(data?.inventory?.totalProcessed || 0), 0)}{' '}
-                <span className="text-xs font-normal text-slate-500">KG</span>
-              </p>
-              <p className="mt-1 text-xs text-slate-400">Available good stock in warehouses</p>
-            </div>
-
-            <div className="ems-card border-l-4 border-l-purple-600 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Pending Contracts</p>
-              <p className="mt-2 text-2xl font-bold text-purple-900">
-                {totalPendingContracts}{' '}
-                <span className="text-xs font-normal text-slate-500">contracts</span>
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                {data?.pendingContracts?.overdue || 0} overdue · {data?.pendingContracts?.dueSoon || 0} due soon
-              </p>
-            </div>
-
-            <div className="ems-card border-l-4 border-l-slate-600 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Raw Material</p>
-              <p className="mt-2 text-2xl font-bold text-slate-800">
-                {formatNumber(Number(data?.inventory?.totalRaw || 0), 0)}{' '}
-                <span className="text-xs font-normal text-slate-500">KG</span>
-              </p>
-              <p className="mt-1 text-xs text-slate-400">Unprocessed seed inventory</p>
-            </div>
-
-            <div className="ems-card border-l-4 border-l-amber-600 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Wastage Inventory</p>
-              <p className="mt-2 text-2xl font-bold text-amber-900">
-                {formatNumber(Number(data?.inventory?.totalWastageInventory || 0), 0)}{' '}
-                <span className="text-xs font-normal text-slate-500">KG</span>
-              </p>
-              <p className="mt-1 text-xs text-slate-400">Stored for Sortex or outward</p>
-            </div>
+            {(
+              [
+                ['Raw / Awaiting Factory Processing', data?.kpis?.rawAwaitingKg ?? data?.inventory?.totalRaw, 'border-l-slate-600', 'Purchased / unprocessed material incl. stock awaiting Sortex'],
+                ['Final Processed Inventory', data?.kpis?.finalProcessedKg, 'border-l-emerald-600', 'Unassigned + allocated processed stock'],
+                ['Material in Production', data?.kpis?.materialInProductionKg ?? data?.inventory?.totalWip, 'border-l-blue-600', 'Work in progress across plants'],
+                ['Processed & Unassigned', data?.kpis?.unassignedKg ?? data?.inventory?.totalProcessed, 'border-l-teal-600', 'Final processed, not yet allocated'],
+                ['Allocated to Containers', data?.kpis?.allocatedKg, 'border-l-orange-500', 'Reserved for containers, not yet dispatched'],
+              ] as [string, number | undefined, string, string][]
+            ).map(([label, kg, border, hint]) => (
+              <div key={label} className={`ems-card border-l-4 ${border} p-4`}>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">
+                  {formatNumber(Number(kg || 0), 0)} <span className="text-xs font-normal text-slate-500">KG</span>
+                </p>
+                <p className="mt-1 text-xs text-slate-400">{hint}</p>
+              </div>
+            ))}
           </div>
 
-          {/* Aging Tables Section (§18.3) */}
           <div className="mt-5 grid gap-5 lg:grid-cols-2">
-            {/* 1. Unassigned Processed Stock Aging */}
-            <div className="ems-card p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-800">Unassigned Processed Stock Aging</h3>
-                  <p className="text-xs text-slate-500">Available processed lots waiting to be allocated to contracts.</p>
-                </div>
-                <Link href="/production/fulfilment" className="text-xs font-medium text-blue-600 hover:underline">
-                  Fulfilment →
-                </Link>
-              </div>
-
-              {(!data?.unassignedProcessedAging || data.unassignedProcessedAging.length === 0) ? (
-                <p className="py-6 text-center text-xs text-slate-400">No unassigned processed lots in inventory.</p>
-              ) : (
-                <div className="max-h-72 overflow-y-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b bg-slate-50 text-left text-slate-500">
-                        <th className="py-2 px-2">Lot</th>
-                        <th className="py-2 px-2">Product</th>
-                        <th className="py-2 px-2">Plant</th>
-                        <th className="py-2 px-2 text-right">Available (KG)</th>
-                        <th className="py-2 px-2 text-right">Aging</th>
+            {/* Product-wise Hulled Sesame (§18.2) */}
+            {data?.hulledSesame && (
+              <div className="ems-card p-4">
+                <h3 className="mb-3 font-semibold text-slate-800">Hulled Sesame Seeds</h3>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {(
+                      [
+                        ['Purchased Hulled Awaiting Sortex', data.hulledSesame.rawKg, ''],
+                        ['Final Processed Hulled', data.hulledSesame.finalProcessedKg, 'font-semibold'],
+                        ['↳ Processed & Unassigned', data.hulledSesame.unassignedKg, 'pl-4 text-slate-600'],
+                        ['↳ Allocated Processed Stock', data.hulledSesame.allocatedKg, 'pl-4 text-slate-600'],
+                      ] as [string, number, string][]
+                    ).map(([label, kg, cls]) => (
+                      <tr key={label} className="border-b border-slate-100">
+                        <td className={`py-1.5 ${cls}`}>{label}</td>
+                        <td className="py-1.5 text-right font-medium tabular-nums">{formatNumber(kg, 0)} KG</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {data.unassignedProcessedAging.map((lot: any) => {
-                        const days = Number(lot.daysInStock || 0);
-                        const badgeColor =
-                          days > 60
-                            ? 'bg-rose-100 text-rose-800 border-rose-200'
-                            : days > 30
-                              ? 'bg-amber-100 text-amber-800 border-amber-200'
-                              : 'bg-slate-100 text-slate-700 border-slate-200';
-                        return (
-                          <tr key={lot.lotNumber} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="py-1.5 px-2 font-mono font-medium text-slate-800">{lot.lotNumber}</td>
-                            <td className="py-1.5 px-2">{lot.product}</td>
-                            <td className="py-1.5 px-2 text-slate-600">{lot.plant}</td>
-                            <td className="py-1.5 px-2 text-right font-semibold text-slate-900">
-                              {formatNumber(lot.availableKg, 0)}
-                            </td>
-                            <td className="py-1.5 px-2 text-right">
-                              <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeColor}`}>
-                                {days} {days === 1 ? 'day' : 'days'}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* 2. Allocated Undispatched Container Aging */}
-            <div className="ems-card p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-800">Allocated Undispatched Container Aging</h3>
-                  <p className="text-xs text-slate-500">Containers holding allocated stock awaiting final dispatch.</p>
-                </div>
-                <Link href="/production/pending" className="text-xs font-medium text-blue-600 hover:underline">
-                  Pending →
-                </Link>
+                    ))}
+                    <tr>
+                      <td className="py-1.5">Pending Eligible Contracts</td>
+                      <td className="py-1.5 text-right font-medium">{data.hulledSesame.eligiblePendingContracts}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                {data.hulledSesame.unassignedMessage && (
+                  <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">{data.hulledSesame.unassignedMessage}</p>
+                )}
+                <p className="mt-2 text-xs text-slate-400">
+                  Natural Sesame (Hulling + Sortex) and purchased Hulled Sesame (Sortex) both feed this one finished product.
+                </p>
               </div>
+            )}
 
-              {(!data?.allocatedUndispatchedAging || data.allocatedUndispatchedAging.length === 0) ? (
-                <p className="py-6 text-center text-xs text-slate-400">No allocated undispatched containers currently.</p>
-              ) : (
-                <div className="max-h-72 overflow-y-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b bg-slate-50 text-left text-slate-500">
-                        <th className="py-2 px-2">Contract</th>
-                        <th className="py-2 px-2">Buyer</th>
-                        <th className="py-2 px-2">Container</th>
-                        <th className="py-2 px-2 text-right">Allocated</th>
-                        <th className="py-2 px-2">Due Date</th>
-                        <th className="py-2 px-2 text-right">Age</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.allocatedUndispatchedAging.map((c: any) => {
-                        const days = Number(c.daysAllocated || 0);
-                        const badgeColor =
-                          days > 30
-                            ? 'bg-rose-100 text-rose-800 border-rose-200'
-                            : days > 14
-                              ? 'bg-amber-100 text-amber-800 border-amber-200'
-                              : 'bg-slate-100 text-slate-700 border-slate-200';
-                        return (
-                          <tr key={`${c.contractNumber}-${c.containerIndex}`} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="py-1.5 px-2 font-semibold text-blue-600">{c.contractNumber}</td>
-                            <td className="py-1.5 px-2 truncate max-w-[100px]">{c.buyer}</td>
-                            <td className="py-1.5 px-2 font-medium">C#{c.containerIndex}</td>
-                            <td className="py-1.5 px-2 text-right font-semibold text-slate-900">
-                              {formatNumber(c.allocatedKg, 0)} KG
-                            </td>
-                            <td className="py-1.5 px-2">
-                              <DueDateBadge dateStr={c.expectedShipmentDate} />
-                            </td>
-                            <td className="py-1.5 px-2 text-right">
-                              <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeColor}`}>
-                                {days}d
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+            {/* Lot KPIs (§17.5) */}
+            {data?.lots && (
+              <div className="ems-card p-4">
+                <h3 className="mb-3 font-semibold text-slate-800">Production Lots</h3>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {(
+                    [
+                      ['Total Lots in Factory', data.lots.inFactory],
+                      ['Lots in Production', data.lots.inProduction],
+                      ['Finalized Lots', data.lots.finalised],
+                      ['Processed & Unassigned Lots', data.lots.unassigned],
+                      ['Lots Allocated to Containers', data.lots.allocated],
+                    ] as [string, number][]
+                  ).map(([label, n]) => (
+                    <div key={label} className="rounded-lg bg-slate-50 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                      <p className="mt-1 text-xl font-bold text-slate-800">{n}</p>
+                    </div>
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5">
+            <ContainerKpiPanel />
+          </div>
+
+          {/* Unassigned processed stock aging */}
+          <div className="mt-5 ems-card p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-slate-800">Unassigned Processed Stock Aging</h3>
+                <p className="text-xs text-slate-500">Available processed lots waiting to be allocated to contracts.</p>
+              </div>
+              <Link href="/production/fulfilment" className="text-xs font-medium text-blue-600 hover:underline">
+                Fulfilment →
+              </Link>
             </div>
+            {!(data?.aging?.unassignedInventory || []).length ? (
+              <p className="py-6 text-center text-xs text-slate-400">No unassigned processed lots in inventory.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b bg-slate-50 text-left text-slate-500">
+                      <th className="px-2 py-2">Production / Lot</th>
+                      <th className="px-2 py-2">Product</th>
+                      <th className="px-2 py-2">Plant</th>
+                      <th className="px-2 py-2 text-right">Available (KG)</th>
+                      <th className="px-2 py-2 text-right">Unassigned for</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.aging.unassignedInventory.map((lot: any) => {
+                      const days = Number(lot.daysUnassigned || 0);
+                      const badge =
+                        days > 60
+                          ? 'bg-rose-100 text-rose-800 border-rose-200'
+                          : days > 30
+                            ? 'bg-amber-100 text-amber-800 border-amber-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200';
+                      return (
+                        <tr key={lot.id} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="px-2 py-1.5 font-mono font-medium text-slate-800">{lot.productionNumber}</td>
+                          <td className="px-2 py-1.5">{lot.product}</td>
+                          <td className="px-2 py-1.5 text-slate-600">{lot.plant}</td>
+                          <td className="px-2 py-1.5 text-right font-semibold text-slate-900">{formatNumber(lot.availableUnassignedKg, 0)}</td>
+                          <td className="px-2 py-1.5 text-right">
+                            <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badge}`}>
+                              {days} {days === 1 ? 'day' : 'days'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Operational summary */}
